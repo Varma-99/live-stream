@@ -1,0 +1,52 @@
+* { box-sizing: border-box; }
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  background: #f4f5f7;
+  color: #1a1a1a;
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+.card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 1.5rem 2rem;
+  max-width: 520px;
+  width: 100%;
+  box-shadow: 0 4px 24px rgba(0,0,0,.08);
+}
+h1 { margin: 0 0 0.5rem; font-size: 1.5rem; }
+.muted { color: #555; margin: 0 0 1.25rem; }
+.note { font-size: 0.9rem; color: #666; background: #fff8e6; border: 1px solid #ffe08a; padding: 0.75rem; border-radius: 8px; }
+.actions { display: flex; gap: 0.75rem; flex-wrap: wrap; margin: 1rem 0; }
+.btn {
+  display: inline-block;
+  padding: 0.65rem 1.2rem;
+  border-radius: 8px;
+  text-decoration: none;
+  font-weight: 600;
+  border: 1px solid #ccc;
+  background: #fff;
+  color: #1a1a1a;
+  cursor: pointer;
+  font-size: 1rem;
+}
+.btn.primary { background: #1a73e8; border-color: #1a73e8; color: #fff; }
+.btn.danger { background: #d93025; border-color: #d93025; color: #fff; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+label { display: block; margin: 0.75rem 0 0.25rem; font-weight: 500; }
+input, select {
+  width: 100%;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  font-size: 1rem;
+}
+#message { margin-top: 1rem; padding: 0.75rem; border-radius: 8px; font-size: 0.9rem; }
+#message.ok { background: #e6f4ea; color: #137333; }
+#message.err { background: #fce8e6; color: #c5221f; }
+.back { margin-bottom: 1rem; font-size: 0.9rem; }
+video { width: 100%; background: #111; border-radius: 8px; margin-top: 1rem; }

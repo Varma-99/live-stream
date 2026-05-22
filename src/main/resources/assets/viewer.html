@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>View — Live Stream</title>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.7"></script>
+  <link rel="stylesheet" href="/ui/common.css">
+</head>
+<body>
+  <main class="card" style="max-width:900px">
+    <p class="back"><a href="/ui/">← Home</a></p>
+    <h1>View (watch)</h1>
+    <p class="muted">Pick a live stream, then play (~3s delay with HLS-3sec tuning).</p>
+
+    <label for="streamPick">Live streams</label>
+    <select id="streamPick">
+      <option value="">— loading —</option>
+    </select>
+    <div class="actions">
+      <button class="btn primary" type="button" onclick="loadStream()">Play</button>
+      <button class="btn" type="button" onclick="refreshStreams()">Refresh list</button>
+    </div>
+
+    <video id="video" controls autoplay muted playsinline></video>
+    <p id="status" class="muted">Ready.</p>
+    <pre id="detail" style="font-size:0.8rem;color:#666;max-height:120px;overflow:auto"></pre>
+  </main>
+  <script>
+    let hlsInstance = null;
+
+    function getStreamId() {
+      const params = new URLSearchParams(location.search);
+      if (params.get('stream')) return params.get('stream');
+      const sel = document.getElementById('streamPick');
+      return sel.value;
+    }
+
+    function playlistUrl(id) {
+      return '/hls/' + id + '/index.m3u8';
+    }
+
+    async function refreshStreams() {
+      const sel = document.getElementById('streamPick');
+      try {
+        const r = await fetch('/streams');
+        const list = await r.json();
+        sel.innerHTML = '';
+        if (list.length === 0) {
+          sel.innerHTML = '<option value="">No live streams — start one on Stream page</option>';
+          return;
+        }
+        list.forEach(s => {
+          const opt = document.createElement('option');
+          opt.value = s.id;
+          opt.textContent = '#' + s.id + ' — ' + s.title + ' (' + s.broadcasterName + ')';
+          sel.appendChild(opt);
+        });
+        const params = new URLSearchParams(location.search);
+        if (params.get('stream')) sel.value = params.get('stream');
+      } catch (e) {
+        sel.innerHTML = '<option value="">Server not reachable</option>';
+      }
+    }
+
+    function setStatus(text) {
+      document.getElementById('status').textContent = text;
+    }
+
+    function loadStream() {
+      const id = getStreamId();
+      if (!id) {
+        setStatus('Select a live stream first (or start one on Stream page).');
+        return;
+      }
+      const url = playlistUrl(id);
+      const video = document.getElementById('video');
+      document.getElementById('detail').textContent = '';
+
+      if (hlsInstance) {
+        hlsInstance.destroy();
+        hlsInstance = null;
+      }
+
+      setStatus('Loading ' + url + ' …');
+
+      if (Hls.isSupported()) {
+        hlsInstance = new Hls({
+          liveSyncDuration: 3,
+          liveMaxLatencyDuration: 10,
+          maxBufferLength: 30,
+          maxMaxBufferLength: 60,
+          liveDurationInfinity: true,
+          lowLatencyMode: false,
+          nudgeMaxRetry: 5
+        });
+        hlsInstance.loadSource(url);
+        hlsInstance.attachMedia(video);
+        hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
+          setStatus('Playing stream #' + id);
+          video.play().catch(() => {});
+        });
+        hlsInstance.on(Hls.Events.ERROR, (_, data) => {
+          document.getElementById('detail').textContent = JSON.stringify(data, null, 2);
+          if (data.details === 'bufferStalledError') {
+            setStatus('Buffer stalled — catching up…');
+            hlsInstance.recoverMediaError();
+            return;
+          }
+          if (!data.fatal) return;
+          setStatus('HLS error: ' + data.type + (data.details ? ' — ' + data.details : ''));
+          if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hlsInstance.recoverMediaError();
+          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hlsInstance.startLoad();
+        });
+      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = url;
+        setStatus('Playing (Safari)');
+      } else {
+        setStatus('HLS not supported in this browser');
+      }
+    }
+
+    refreshStreams();
+    const params = new URLSearchParams(location.search);
+    if (params.get('stream')) setTimeout(loadStream, 500);
+  </script>
+</body>
+</html>

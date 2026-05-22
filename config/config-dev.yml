@@ -1,0 +1,43 @@
+# Local development — embedded H2 database (no Docker, no PostgreSQL required)
+# Run: server config/config-dev.yml
+
+server:
+  applicationConnectors:
+    - type: http
+      port: 8080
+  adminConnectors:
+    - type: http
+      port: 8081
+
+logging:
+  level: INFO
+  loggers:
+    com.livestream: DEBUG
+
+devMode: true
+
+database:
+  driverClass: org.h2.Driver
+  # In-memory avoids "database file locked" when a previous run is still open
+  url: jdbc:h2:mem:livestream-dev;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
+  user: sa
+  password: ""
+  properties:
+    hibernate.dialect: org.hibernate.dialect.H2Dialect
+    hibernate.hbm2ddl.auto: update
+    hibernate.show_sql: false
+  maxWaitForConnection: 1s
+  validationQuery: "SELECT 1"
+  initialSize: 1
+  minSize: 1
+  maxSize: 8
+
+ffmpegPath: /opt/homebrew/bin/ffmpeg
+hlsOutputDir: ./data/hls
+# laptop camera (macOS). Use "test" for color bars, "rtmp" for OBS later
+videoInput: camera
+cameraDevice: "0:0"
+useTestVideo: false
+rtmpPort: 1935
+
+# HLS latency tuning (see branch HLS-3sec): 2s segments, GOP 30 frames, player ~3s behind live

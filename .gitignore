@@ -1,0 +1,9 @@
+target/
+.idea/*
+!.idea/runConfigurations/
+*.iml
+.DS_Store
+data/hls/
+data/livestream-dev.mv.db
+data/livestream-dev.trace.db
+*.log

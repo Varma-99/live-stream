@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Broadcast — Live Stream</title>
+  <link rel="stylesheet" href="/ui/common.css">
+</head>
+<body>
+  <main class="card">
+    <p class="back"><a href="/ui/">← Home</a></p>
+    <h1>Stream (broadcast)</h1>
+    <p class="muted">Starts your laptop camera via the server (FFmpeg). One live stream at a time on this device.</p>
+
+    <label for="title">Stream title</label>
+    <input id="title" type="text" placeholder="My live stream" value="My live stream">
+
+    <div class="actions" style="margin-top:1rem">
+      <button class="btn primary" id="startBtn" type="button">Start stream</button>
+      <button class="btn danger" id="stopBtn" type="button" disabled>Stop stream</button>
+    </div>
+
+    <div id="message"></div>
+    <div id="liveInfo" class="note" style="display:none;margin-top:1rem"></div>
+  </main>
+  <script>
+    const API = '';
+    let currentStreamId = null;
+
+    function showMessage(text, ok) {
+      const el = document.getElementById('message');
+      el.textContent = text;
+      el.className = ok ? 'ok' : 'err';
+    }
+
+    function setLiveInfo(stream) {
+      const el = document.getElementById('liveInfo');
+      if (!stream) {
+        el.style.display = 'none';
+        return;
+      }
+      el.style.display = 'block';
+      el.innerHTML =
+        '<strong>Live now</strong><br>' +
+        'Stream id: <code>' + stream.id + '</code><br>' +
+        'Title: ' + escapeHtml(stream.title) + '<br>' +
+        '<a href="/ui/viewer.html?stream=' + stream.id + '">Open viewer →</a>';
+    }
+
+    function escapeHtml(s) {
+      const d = document.createElement('div');
+      d.textContent = s;
+      return d.innerHTML;
+    }
+
+    async function refreshLive() {
+      try {
+        const r = await fetch(API + '/streams');
+        const list = await r.json();
+        const mine = list.find(s => s.broadcasterId === 1);
+        if (mine) {
+          currentStreamId = mine.id;
+          document.getElementById('stopBtn').disabled = false;
+          document.getElementById('startBtn').disabled = true;
+          setLiveInfo(mine);
+        } else {
+          currentStreamId = null;
+          document.getElementById('stopBtn').disabled = true;
+          document.getElementById('startBtn').disabled = false;
+          setLiveInfo(null);
+        }
+      } catch (e) {
+        showMessage('Cannot reach server. Is LiveStreamApplication running?', false);
+      }
+    }
+
+    document.getElementById('startBtn').onclick = async () => {
+      const title = document.getElementById('title').value.trim();
+      if (!title) {
+        showMessage('Enter a title', false);
+        return;
+      }
+      showMessage('Starting…', true);
+      try {
+        const r = await fetch(API + '/streams/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ broadcasterId: 1, title })
+        });
+        const data = await r.json();
+        if (!r.ok) {
+          showMessage(data.error || 'Start failed', false);
+          return;
+        }
+        currentStreamId = data.id;
+        document.getElementById('stopBtn').disabled = false;
+        document.getElementById('startBtn').disabled = true;
+        showMessage('Stream started. Wait ~6s, then open View to watch.', true);
+        setLiveInfo(data);
+      } catch (e) {
+        showMessage(String(e), false);
+      }
+    };
+
+    document.getElementById('stopBtn').onclick = async () => {
+      if (!currentStreamId) return;
+      showMessage('Stopping…', true);
+      try {
+        const r = await fetch(API + '/streams/' + currentStreamId + '/stop', { method: 'POST' });
+        const data = await r.json();
+        if (!r.ok) {
+          showMessage(data.error || 'Stop failed', false);
+          return;
+        }
+        currentStreamId = null;
+        document.getElementById('stopBtn').disabled = true;
+        document.getElementById('startBtn').disabled = false;
+        showMessage('Stream stopped. Camera released.', true);
+        setLiveInfo(null);
+      } catch (e) {
+        showMessage(String(e), false);
+      }
+    };
+
+    refreshLive();
+  </script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: livestream
+      POSTGRES_USER: livestream
+      POSTGRES_PASSWORD: change-me
+    volumes:
+      - ./src/main/resources/db/migration/V1__schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      - ./src/main/resources/db/migration/V2__seed_dev_users.sql:/docker-entrypoint-initdb.d/02-seed.sql
