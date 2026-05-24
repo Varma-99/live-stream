@@ -71,10 +71,14 @@ public class LiveStreamApplication extends Application<LiveStreamConfiguration> 
             LOGGER.info("Dev mode: using embedded H2 database (config-dev.yml)");
         }
 
-        LOGGER.info("live-stream started (Phase 3 — HLS + FFmpeg)");
+        LOGGER.info("live-stream started — delivery={}", configuration.getStreamDelivery());
         LOGGER.info("REST: GET /streams, POST /streams/start, POST /streams/{id}/stop");
         LOGGER.info("Web UI: http://localhost:8080/ui/");
-        LOGGER.info("HLS example: http://localhost:8080/hls/1/index.m3u8");
+        if (configuration.isMediamtxDelivery()) {
+            LOGGER.info("MediaMTX: run ./scripts/start-mediamtx.sh (RTMP :1935, WebRTC :8889)");
+        } else {
+            LOGGER.info("HLS example: http://localhost:8080/hls/1/index.m3u8");
+        }
         LOGGER.info("HLS output dir: {}", configuration.getHlsOutputDir());
         LOGGER.info("FFmpeg path: {} (videoInput={})", configuration.getFfmpegPath(), configuration.getVideoInput());
         if ("camera".equalsIgnoreCase(configuration.getVideoInput())) {

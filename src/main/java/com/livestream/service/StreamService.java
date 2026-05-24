@@ -39,7 +39,11 @@ public class StreamService {
 
     public List<StreamResponse> listLiveStreams() {
         return liveStreamDAO.findByStatus(StreamStatus.LIVE).stream()
-                .map(StreamResponse::from)
+                .map(stream -> {
+                    StreamResponse response = StreamResponse.from(stream);
+                    videoService.applyPlaybackUrls(response, stream);
+                    return response;
+                })
                 .toList();
     }
 
@@ -55,7 +59,7 @@ public class StreamService {
             throw new IllegalStateException("Broadcaster already has a live stream");
         }
 
-        if (isCameraInput() && liveStreamDAO.countByStatus(StreamStatus.LIVE) > 0) {
+        if (usesLocalCamera() && liveStreamDAO.countByStatus(StreamStatus.LIVE) > 0) {
             throw new IllegalStateException(
                     "Only one live stream at a time while using the laptop camera. Stop the current stream first.");
         }
@@ -75,7 +79,7 @@ public class StreamService {
             throw new IllegalStateException("Failed to start video engine: " + e.getMessage(), e);
         }
         StreamResponse response = StreamResponse.from(saved);
-        response.setPlaybackUrl(videoService.playbackUrl(saved.getId()));
+        videoService.applyPlaybackUrls(response, saved);
         return response;
     }
 
@@ -91,7 +95,7 @@ public class StreamService {
         return StreamResponse.from(stream);
     }
 
-    private boolean isCameraInput() {
+    private boolean usesLocalCamera() {
         return "camera".equalsIgnoreCase(configuration.getVideoInput());
     }
 

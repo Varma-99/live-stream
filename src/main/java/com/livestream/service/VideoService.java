@@ -18,7 +18,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Data Plane: spawns FFmpeg via {@link ProcessBuilder} and writes HLS under {@code data/hls/{streamId}/}.
+ * Data Plane: FFmpeg ingest — either HLS files on disk or RTMP publish to MediaMTX.
  */
 @Singleton
 public class VideoService implements Managed {
@@ -31,6 +31,10 @@ public class VideoService implements Managed {
     @Inject
     public VideoService(LiveStreamConfiguration configuration) {
         this.configuration = configuration;
+    }
+
+    public boolean isMediamtxDelivery() {
+        return configuration.isMediamtxDelivery();
     }
 
     public void startForStream(LiveStream stream) throws IOException {
@@ -46,7 +50,9 @@ public class VideoService implements Managed {
         }
 
         Path outputDir = Paths.get(configuration.getHlsOutputDir()).resolve(String.valueOf(streamId));
-        Files.createDirectories(outputDir);
+        if (!isMediamtxDelivery()) {
+            Files.createDirectories(outputDir);
+        }
 
         List<String> command = buildFfmpegCommand(ffmpeg.toString(), outputDir, stream);
 
@@ -55,8 +61,18 @@ public class VideoService implements Managed {
         Process process = builder.start();
 
         processes.put(streamId, process);
-        LOGGER.info("FFmpeg started for stream {} (pid={}, input={})", streamId, process.pid(), resolveInputMode());
-        LOGGER.info("HLS playlist: {}", playbackUrl(streamId));
+        LOGGER.info(
+                "FFmpeg started for stream {} (pid={}, delivery={}, input={})",
+                streamId,
+                process.pid(),
+                configuration.getStreamDelivery(),
+                resolveInputMode());
+        if (isMediamtxDelivery()) {
+            LOGGER.info("MediaMTX RTMP publish: {}", rtmpPublishUrl(stream.getStreamKey()));
+            LOGGER.info("WebRTC WHEP playback: {}", whepPlaybackUrl(stream.getStreamKey()));
+        } else {
+            LOGGER.info("HLS playlist: {}", hlsPlaybackUrl(streamId));
+        }
 
         Thread logThread = new Thread(() -> drainLogs(streamId, process), "ffmpeg-log-" + streamId);
         logThread.setDaemon(true);
@@ -64,9 +80,22 @@ public class VideoService implements Managed {
     }
 
     private List<String> buildFfmpegCommand(String ffmpegPath, Path outputDir, LiveStream stream) {
-        String mode = resolveInputMode();
+        if (isMediamtxDelivery()) {
+            String rtmpUrl = rtmpPublishUrl(stream.getStreamKey());
+            return switch (resolveInputMode()) {
+                case "camera" -> {
+                    if (!System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac")) {
+                        throw new IllegalStateException(
+                                "videoInput=camera requires macOS. Use videoInput: test");
+                    }
+                    yield FfmpegCommandBuilder.avfoundationCameraToMediamtx(
+                            ffmpegPath, configuration.getCameraDevice(), rtmpUrl);
+                }
+                default -> FfmpegCommandBuilder.testPatternToMediamtx(ffmpegPath, rtmpUrl);
+            };
+        }
 
-        return switch (mode) {
+        return switch (resolveInputMode()) {
             case "camera" -> {
                 if (!System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac")) {
                     throw new IllegalStateException(
@@ -79,6 +108,33 @@ public class VideoService implements Managed {
                     ffmpegPath, outputDir, configuration.getRtmpPort(), stream.getStreamKey());
             default -> FfmpegCommandBuilder.testPatternToHls(ffmpegPath, outputDir);
         };
+    }
+
+    public String rtmpPublishUrl(String streamKey) {
+        String base = configuration.getMediamtxRtmpPublishBase().replaceAll("/$", "");
+        return base + "/live/" + streamKey;
+    }
+
+    public String whepPlaybackUrl(String streamKey) {
+        String base = configuration.getMediamtxWebrtcBase().replaceAll("/$", "");
+        return base + "/live/" + streamKey + "/whep";
+    }
+
+    public String hlsPlaybackUrl(Long streamId) {
+        return "/hls/" + streamId + "/index.m3u8";
+    }
+
+    /** Sets API playback fields on the response (HLS path or WebRTC WHEP URL). */
+    public void applyPlaybackUrls(com.livestream.api.dto.StreamResponse response, LiveStream stream) {
+        if (isMediamtxDelivery()) {
+            response.setDelivery("webrtc");
+            response.setWebrtcWhepUrl(whepPlaybackUrl(stream.getStreamKey()));
+            response.setPlaybackUrl(null);
+        } else {
+            response.setDelivery("hls");
+            response.setPlaybackUrl(hlsPlaybackUrl(stream.getId()));
+            response.setWebrtcWhepUrl(null);
+        }
     }
 
     private String resolveInputMode() {
@@ -104,10 +160,6 @@ public class VideoService implements Managed {
             process.destroyForcibly();
         }
         LOGGER.info("FFmpeg stopped for stream {}", streamId);
-    }
-
-    public String playbackUrl(Long streamId) {
-        return "/hls/" + streamId + "/index.m3u8";
     }
 
     @Override

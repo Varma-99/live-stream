@@ -1,0 +1,19 @@
+# MediaMTX — minimal config for live-stream (RTMP ingest + WebRTC playback only)
+# Run: ./scripts/start-mediamtx.sh
+
+logLevel: info
+
+# Only what we use (disables RTSP :8554/:8000, HLS :8888, SRT :8890)
+rtsp: no
+srt: no
+hls: no
+hlsAddress: ""
+
+rtmp: yes
+rtmpAddress: :1935
+
+webrtc: yes
+webrtcAddress: :8889
+
+paths:
+  all_others:

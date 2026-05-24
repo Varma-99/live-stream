@@ -36,6 +36,13 @@ public class LiveStreamConfiguration extends Configuration {
 
     private int rtmpPort = 1935;
 
+    /** {@code hls} = FFmpeg writes .m3u8 files; {@code mediamtx} = FFmpeg publishes RTMP, viewers use WebRTC. */
+    private String streamDelivery = "hls";
+
+    private String mediamtxRtmpPublishBase = "rtmp://127.0.0.1:1935";
+
+    private String mediamtxWebrtcBase = "http://127.0.0.1:8889";
+
     @JsonProperty("database")
     public DataSourceFactory getDataSourceFactory() {
         return database;
@@ -114,5 +121,39 @@ public class LiveStreamConfiguration extends Configuration {
     @JsonProperty
     public void setCameraDevice(String cameraDevice) {
         this.cameraDevice = cameraDevice;
+    }
+
+    @JsonProperty
+    public String getStreamDelivery() {
+        return streamDelivery;
+    }
+
+    @JsonProperty
+    public void setStreamDelivery(String streamDelivery) {
+        this.streamDelivery = streamDelivery;
+    }
+
+    @JsonProperty
+    public String getMediamtxRtmpPublishBase() {
+        return mediamtxRtmpPublishBase;
+    }
+
+    @JsonProperty
+    public void setMediamtxRtmpPublishBase(String mediamtxRtmpPublishBase) {
+        this.mediamtxRtmpPublishBase = mediamtxRtmpPublishBase;
+    }
+
+    @JsonProperty
+    public String getMediamtxWebrtcBase() {
+        return mediamtxWebrtcBase;
+    }
+
+    @JsonProperty
+    public void setMediamtxWebrtcBase(String mediamtxWebrtcBase) {
+        this.mediamtxWebrtcBase = mediamtxWebrtcBase;
+    }
+
+    public boolean isMediamtxDelivery() {
+        return "mediamtx".equalsIgnoreCase(streamDelivery);
     }
 }

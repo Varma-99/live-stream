@@ -34,6 +34,14 @@ public class StreamResponse {
     @JsonProperty
     private String playbackUrl;
 
+    /** {@code hls} or {@code webrtc} */
+    @JsonProperty
+    private String delivery;
+
+    /** MediaMTX WHEP endpoint for browser WebRTC playback. */
+    @JsonProperty
+    private String webrtcWhepUrl;
+
     public static StreamResponse from(LiveStream stream) {
         StreamResponse response = new StreamResponse();
         response.id = stream.getId();
@@ -49,6 +57,22 @@ public class StreamResponse {
 
     public void setPlaybackUrl(String playbackUrl) {
         this.playbackUrl = playbackUrl;
+    }
+
+    public void setDelivery(String delivery) {
+        this.delivery = delivery;
+    }
+
+    public void setWebrtcWhepUrl(String webrtcWhepUrl) {
+        this.webrtcWhepUrl = webrtcWhepUrl;
+    }
+
+    public String getDelivery() {
+        return delivery;
+    }
+
+    public String getWebrtcWhepUrl() {
+        return webrtcWhepUrl;
     }
 
     public Long getId() {
