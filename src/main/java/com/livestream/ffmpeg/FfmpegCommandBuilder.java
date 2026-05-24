@@ -9,8 +9,11 @@ import java.util.List;
  */
 public final class FfmpegCommandBuilder {
 
-    /** Keyframe every 30 frames @ 30fps ≈ 1s (was 120 ≈ 4s on camera). */
+    /** Keyframe every 30 frames @ 30fps ≈ 1s (HLS). */
     private static final String GOP_FRAMES = "30";
+
+    /** MediaMTX WebRTC: 15 frames @ 30fps ≈ 0.5s between keyframes. */
+    private static final String GOP_FRAMES_MEDIAMTX = "15";
 
     /** HLS segment length in seconds — smaller = lower latency. */
     private static final String HLS_SEGMENT_SECONDS = "2";
@@ -134,6 +137,7 @@ public final class FfmpegCommandBuilder {
         List<String> command = new ArrayList<>();
         command.add(ffmpegPath);
         command.add("-y");
+        appendMediamtxInputLatency(command);
         command.add("-f");
         command.add("avfoundation");
         command.add("-framerate");
@@ -147,6 +151,14 @@ public final class FfmpegCommandBuilder {
         return command;
     }
 
+    /** Reduce capture/mux buffering before encode (MediaMTX path only). */
+    private static void appendMediamtxInputLatency(List<String> command) {
+        command.add("-fflags");
+        command.add("nobuffer");
+        command.add("-flags");
+        command.add("low_delay");
+    }
+
     /**
      * H.264 without B-frames — required for MediaMTX WebRTC
      * (see log: "WebRTC doesn't support H264 streams with B-frames").
@@ -155,17 +167,23 @@ public final class FfmpegCommandBuilder {
         command.add("-c:v");
         command.add("libx264");
         command.add("-preset");
-        command.add("veryfast");
+        command.add("ultrafast");
+        command.add("-tune");
+        command.add("zerolatency");
         command.add("-profile:v");
         command.add("baseline");
         command.add("-pix_fmt");
         command.add("yuv420p");
         command.add("-g");
-        command.add(GOP_FRAMES);
+        command.add(GOP_FRAMES_MEDIAMTX);
+        command.add("-keyint_min");
+        command.add(GOP_FRAMES_MEDIAMTX);
+        command.add("-sc_threshold");
+        command.add("0");
         command.add("-bf");
         command.add("0");
         command.add("-x264-params");
-        command.add("bframes=0:rc-lookahead=0");
+        command.add("bframes=0:rc-lookahead=0:sync-lookahead=0:scenecut=0");
         command.add("-c:a");
         command.add("aac");
         command.add("-profile:a");
@@ -175,7 +193,7 @@ public final class FfmpegCommandBuilder {
         command.add("-ar");
         command.add("44100");
         command.add("-b:a");
-        command.add("128k");
+        command.add("96k");
     }
 
     private static void appendVideoAudioEncoding(List<String> command) {
@@ -194,8 +212,16 @@ public final class FfmpegCommandBuilder {
     }
 
     private static void appendFlvPublish(List<String> command, String rtmpPublishUrl) {
+        command.add("-muxdelay");
+        command.add("0");
+        command.add("-muxpreload");
+        command.add("0");
+        command.add("-flush_packets");
+        command.add("1");
         command.add("-f");
         command.add("flv");
+        command.add("-flvflags");
+        command.add("no_duration_filesize");
         command.add(rtmpPublishUrl);
     }
 

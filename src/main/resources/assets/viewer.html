@@ -84,9 +84,8 @@
       const video = document.getElementById('video');
       setStatus('Connecting WebRTC (WHEP)…');
 
-      const pc = new RTCPeerConnection({
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-      });
+      // Same-machine / LAN: no STUN — faster ICE than routing through Google STUN
+      const pc = new RTCPeerConnection({ iceServers: [] });
       whepPc = pc;
 
       pc.addTransceiver('video', { direction: 'recvonly' });
