@@ -44,6 +44,9 @@ rtmpPort: 1935
 streamDelivery: mediamtx
 mediamtxRtmpPublishBase: rtmp://127.0.0.1:1935
 mediamtxWebrtcBase: http://127.0.0.1:8889
+mediamtxApiBase: http://127.0.0.1:9997
+mediamtxApiEnabled: true
+abrEnabled: true
 
 # MediaMTX mode: ultrafast + zerolatency, 0.5s GOP, localhost WebRTC (see FfmpegCommandBuilder)
 # HLS mode only (streamDelivery: hls): 2s segments, GOP 30 frames

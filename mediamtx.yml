@@ -3,6 +3,9 @@
 
 logLevel: info
 
+api: yes
+apiAddress: :9997
+
 # Only what we use (disables RTSP :8554/:8000, HLS :8888, SRT :8890)
 rtsp: no
 srt: no

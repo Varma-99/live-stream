@@ -151,6 +151,113 @@ public final class FfmpegCommandBuilder {
         return command;
     }
 
+    /**
+     * Three RTMP outputs (high / mid / low) for fallback ABR — separate MediaMTX paths + WHEP URLs.
+     */
+    public static List<String> avfoundationCameraToMediamtxAbr(
+            String ffmpegPath, String device, String rtmpPublishUrlHigh, String rtmpPublishUrlMid, String rtmpPublishUrlLow) {
+        List<String> command = new ArrayList<>();
+        command.add(ffmpegPath);
+        command.add("-y");
+        appendMediamtxInputLatency(command);
+        command.add("-f");
+        command.add("avfoundation");
+        command.add("-framerate");
+        command.add("30");
+        command.add("-video_size");
+        command.add("1280x720");
+        command.add("-i");
+        command.add(device);
+        command.add("-filter_complex");
+        command.add(
+                "[0:v]split=3[v1][v2][v3];[v1]scale=1280:720:flags=fast_bilinear[vhi];[v2]scale=854:480:flags=fast_bilinear[vmd];[v3]scale=640:360:flags=fast_bilinear[vlo]");
+        appendMediamtxAbrOutput(command, "[vhi]", "0:a:0", "2500k", rtmpPublishUrlHigh);
+        appendMediamtxAbrOutput(command, "[vmd]", "0:a:0", "1200k", rtmpPublishUrlMid);
+        appendMediamtxAbrOutput(command, "[vlo]", "0:a:0", "600k", rtmpPublishUrlLow);
+        return command;
+    }
+
+    public static List<String> testPatternToMediamtxAbr(
+            String ffmpegPath, String rtmpPublishUrlHigh, String rtmpPublishUrlMid, String rtmpPublishUrlLow) {
+        List<String> command = new ArrayList<>();
+        command.add(ffmpegPath);
+        command.add("-y");
+        command.add("-f");
+        command.add("lavfi");
+        command.add("-i");
+        command.add("testsrc=size=1280x720:rate=30");
+        command.add("-f");
+        command.add("lavfi");
+        command.add("-i");
+        command.add("sine=frequency=440:sample_rate=44100");
+        command.add("-filter_complex");
+        command.add(
+                "[0:v]split=3[v1][v2][v3];[v1]scale=1280:720:flags=fast_bilinear[vhi];[v2]scale=854:480:flags=fast_bilinear[vmd];[v3]scale=640:360:flags=fast_bilinear[vlo]");
+        appendMediamtxAbrOutput(command, "[vhi]", "1:a:0", "2500k", rtmpPublishUrlHigh);
+        appendMediamtxAbrOutput(command, "[vmd]", "1:a:0", "1200k", rtmpPublishUrlMid);
+        appendMediamtxAbrOutput(command, "[vlo]", "1:a:0", "600k", rtmpPublishUrlLow);
+        return command;
+    }
+
+    private static void appendMediamtxAbrOutput(
+            List<String> command, String videoLabel, String audioMap, String videoBitrate, String rtmpUrl) {
+        command.add("-map");
+        command.add(videoLabel);
+        command.add("-map");
+        command.add(audioMap);
+        appendMediamtxVideoEncoding(command, videoBitrate);
+        appendFlvPublish(command, rtmpUrl);
+    }
+
+    private static void appendMediamtxVideoEncoding(List<String> command, String videoBitrate) {
+        command.add("-c:v");
+        command.add("libx264");
+        command.add("-preset");
+        command.add("ultrafast");
+        command.add("-tune");
+        command.add("zerolatency");
+        command.add("-profile:v");
+        command.add("baseline");
+        command.add("-pix_fmt");
+        command.add("yuv420p");
+        command.add("-g");
+        command.add(GOP_FRAMES_MEDIAMTX);
+        command.add("-keyint_min");
+        command.add(GOP_FRAMES_MEDIAMTX);
+        command.add("-sc_threshold");
+        command.add("0");
+        command.add("-bf");
+        command.add("0");
+        command.add("-b:v");
+        command.add(videoBitrate);
+        command.add("-maxrate");
+        command.add(videoBitrate);
+        command.add("-bufsize");
+        command.add(bufferSize(videoBitrate));
+        command.add("-x264-params");
+        command.add("bframes=0:rc-lookahead=0:sync-lookahead=0:scenecut=0");
+        command.add("-c:a");
+        command.add("aac");
+        command.add("-profile:a");
+        command.add("aac_low");
+        command.add("-ac");
+        command.add("2");
+        command.add("-ar");
+        command.add("44100");
+        command.add("-b:a");
+        command.add("96k");
+    }
+
+    private static String bufferSize(String videoBitrate) {
+        String digits = videoBitrate.replace("k", "").replace("K", "");
+        try {
+            int kbps = Integer.parseInt(digits);
+            return Math.max(kbps * 2, 400) + "k";
+        } catch (NumberFormatException e) {
+            return "1000k";
+        }
+    }
+
     /** Reduce capture/mux buffering before encode (MediaMTX path only). */
     private static void appendMediamtxInputLatency(List<String> command) {
         command.add("-fflags");

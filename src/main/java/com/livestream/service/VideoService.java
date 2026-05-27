@@ -3,6 +3,7 @@ package com.livestream.service;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import com.livestream.LiveStreamConfiguration;
+import com.livestream.api.dto.QualityOption;
 import com.livestream.ffmpeg.FfmpegCommandBuilder;
 import com.livestream.model.LiveStream;
 import io.dropwizard.lifecycle.Managed;
@@ -10,6 +11,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -37,6 +39,10 @@ public class VideoService implements Managed {
         return configuration.isMediamtxDelivery();
     }
 
+    public boolean isAbrEnabled() {
+        return isMediamtxDelivery() && configuration.isAbrEnabled();
+    }
+
     public void startForStream(LiveStream stream) throws IOException {
         Long streamId = stream.getId();
         if (processes.containsKey(streamId)) {
@@ -62,14 +68,20 @@ public class VideoService implements Managed {
 
         processes.put(streamId, process);
         LOGGER.info(
-                "FFmpeg started for stream {} (pid={}, delivery={}, input={})",
+                "FFmpeg started for stream {} (pid={}, delivery={}, abr={}, input={})",
                 streamId,
                 process.pid(),
                 configuration.getStreamDelivery(),
+                isAbrEnabled(),
                 resolveInputMode());
         if (isMediamtxDelivery()) {
-            LOGGER.info("MediaMTX RTMP publish: {}", rtmpPublishUrl(stream.getStreamKey()));
-            LOGGER.info("WebRTC WHEP playback: {}", whepPlaybackUrl(stream.getStreamKey()));
+            if (isAbrEnabled()) {
+                String key = stream.getStreamKey();
+                LOGGER.info("MediaMTX ABR RTMP: high={}, mid={}, low={}", rtmpPublishUrl(key, "_high"), rtmpPublishUrl(key, "_mid"), rtmpPublishUrl(key, "_low"));
+            } else {
+                LOGGER.info("MediaMTX RTMP publish: {}", rtmpPublishUrl(stream.getStreamKey(), ""));
+                LOGGER.info("WebRTC WHEP playback: {}", whepPlaybackUrl(stream.getStreamKey(), ""));
+            }
         } else {
             LOGGER.info("HLS playlist: {}", hlsPlaybackUrl(streamId));
         }
@@ -81,7 +93,24 @@ public class VideoService implements Managed {
 
     private List<String> buildFfmpegCommand(String ffmpegPath, Path outputDir, LiveStream stream) {
         if (isMediamtxDelivery()) {
-            String rtmpUrl = rtmpPublishUrl(stream.getStreamKey());
+            String streamKey = stream.getStreamKey();
+            if (isAbrEnabled()) {
+                String high = rtmpPublishUrl(streamKey, "_high");
+                String mid = rtmpPublishUrl(streamKey, "_mid");
+                String low = rtmpPublishUrl(streamKey, "_low");
+                return switch (resolveInputMode()) {
+                    case "camera" -> {
+                        if (!System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac")) {
+                            throw new IllegalStateException(
+                                    "videoInput=camera requires macOS. Use videoInput: test");
+                        }
+                        yield FfmpegCommandBuilder.avfoundationCameraToMediamtxAbr(
+                                ffmpegPath, configuration.getCameraDevice(), high, mid, low);
+                    }
+                    default -> FfmpegCommandBuilder.testPatternToMediamtxAbr(ffmpegPath, high, mid, low);
+                };
+            }
+            String rtmpUrl = rtmpPublishUrl(streamKey, "");
             return switch (resolveInputMode()) {
                 case "camera" -> {
                     if (!System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac")) {
@@ -110,14 +139,28 @@ public class VideoService implements Managed {
         };
     }
 
-    public String rtmpPublishUrl(String streamKey) {
+    public String rtmpPublishUrl(String streamKey, String suffix) {
         String base = configuration.getMediamtxRtmpPublishBase().replaceAll("/$", "");
-        return base + "/live/" + streamKey;
+        return base + "/live/" + streamKey + suffix;
     }
 
-    public String whepPlaybackUrl(String streamKey) {
+    public String whepPlaybackUrl(String streamKey, String suffix) {
         String base = configuration.getMediamtxWebrtcBase().replaceAll("/$", "");
-        return base + "/live/" + streamKey + "/whep";
+        return base + "/live/" + streamKey + suffix + "/whep";
+    }
+
+    public List<QualityOption> qualityOptions(String streamKey) {
+        if (!isMediamtxDelivery()) {
+            return List.of();
+        }
+        if (!isAbrEnabled()) {
+            return List.of(new QualityOption("high", "720p", whepPlaybackUrl(streamKey, ""), 800));
+        }
+        List<QualityOption> options = new ArrayList<>();
+        options.add(new QualityOption("high", "720p", whepPlaybackUrl(streamKey, "_high"), 2000));
+        options.add(new QualityOption("mid", "480p", whepPlaybackUrl(streamKey, "_mid"), 900));
+        options.add(new QualityOption("low", "360p", whepPlaybackUrl(streamKey, "_low"), 400));
+        return options;
     }
 
     public String hlsPlaybackUrl(Long streamId) {
@@ -127,13 +170,16 @@ public class VideoService implements Managed {
     /** Sets API playback fields on the response (HLS path or WebRTC WHEP URL). */
     public void applyPlaybackUrls(com.livestream.api.dto.StreamResponse response, LiveStream stream) {
         if (isMediamtxDelivery()) {
+            List<QualityOption> qualities = qualityOptions(stream.getStreamKey());
             response.setDelivery("webrtc");
-            response.setWebrtcWhepUrl(whepPlaybackUrl(stream.getStreamKey()));
+            response.setQualities(qualities);
+            response.setWebrtcWhepUrl(qualities.isEmpty() ? null : qualities.get(0).getWebrtcWhepUrl());
             response.setPlaybackUrl(null);
         } else {
             response.setDelivery("hls");
             response.setPlaybackUrl(hlsPlaybackUrl(stream.getId()));
             response.setWebrtcWhepUrl(null);
+            response.setQualities(null);
         }
     }
 

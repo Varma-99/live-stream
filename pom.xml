@@ -72,8 +72,6 @@
             <version>${guice.version}</version>
         </dependency>
 
-        <!-- Phase 4: add websocket-jetty-server when building the chat layer -->
-
         <dependency>
             <groupId>io.dropwizard</groupId>
             <artifactId>dropwizard-testing</artifactId>

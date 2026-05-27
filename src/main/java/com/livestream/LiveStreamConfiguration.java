@@ -43,6 +43,13 @@ public class LiveStreamConfiguration extends Configuration {
 
     private String mediamtxWebrtcBase = "http://127.0.0.1:8889";
 
+    private String mediamtxApiBase = "http://127.0.0.1:9997";
+
+    private boolean mediamtxApiEnabled = true;
+
+    /** Three RTMP/WHEP rungs (high / mid / low) when using mediamtx delivery. */
+    private boolean abrEnabled = true;
+
     @JsonProperty("database")
     public DataSourceFactory getDataSourceFactory() {
         return database;
@@ -155,5 +162,35 @@ public class LiveStreamConfiguration extends Configuration {
 
     public boolean isMediamtxDelivery() {
         return "mediamtx".equalsIgnoreCase(streamDelivery);
+    }
+
+    @JsonProperty
+    public String getMediamtxApiBase() {
+        return mediamtxApiBase;
+    }
+
+    @JsonProperty
+    public void setMediamtxApiBase(String mediamtxApiBase) {
+        this.mediamtxApiBase = mediamtxApiBase;
+    }
+
+    @JsonProperty
+    public boolean isMediamtxApiEnabled() {
+        return mediamtxApiEnabled;
+    }
+
+    @JsonProperty
+    public void setMediamtxApiEnabled(boolean mediamtxApiEnabled) {
+        this.mediamtxApiEnabled = mediamtxApiEnabled;
+    }
+
+    @JsonProperty
+    public boolean isAbrEnabled() {
+        return abrEnabled;
+    }
+
+    @JsonProperty
+    public void setAbrEnabled(boolean abrEnabled) {
+        this.abrEnabled = abrEnabled;
     }
 }

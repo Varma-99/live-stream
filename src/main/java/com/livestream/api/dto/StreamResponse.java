@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.livestream.model.LiveStream;
 import com.livestream.model.StreamStatus;
 import java.time.Instant;
+import java.util.List;
 
 public class StreamResponse {
 
@@ -42,6 +43,10 @@ public class StreamResponse {
     @JsonProperty
     private String webrtcWhepUrl;
 
+    /** Fallback ABR rungs (high → low); each has its own WHEP URL. */
+    @JsonProperty
+    private List<QualityOption> qualities;
+
     public static StreamResponse from(LiveStream stream) {
         StreamResponse response = new StreamResponse();
         response.id = stream.getId();
@@ -65,6 +70,14 @@ public class StreamResponse {
 
     public void setWebrtcWhepUrl(String webrtcWhepUrl) {
         this.webrtcWhepUrl = webrtcWhepUrl;
+    }
+
+    public void setQualities(List<QualityOption> qualities) {
+        this.qualities = qualities;
+    }
+
+    public List<QualityOption> getQualities() {
+        return qualities;
     }
 
     public String getDelivery() {

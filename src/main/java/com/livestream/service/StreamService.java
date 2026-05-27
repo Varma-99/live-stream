@@ -10,6 +10,11 @@ import com.livestream.model.LiveStream;
 import com.livestream.model.StreamStatus;
 import com.livestream.model.User;
 import com.livestream.model.UserRole;
+import com.livestream.api.dto.JoinResponse;
+import com.livestream.api.dto.RoomSnapshot;
+import com.livestream.mediamtx.IngestHealthService;
+import com.livestream.realtime.BroadcasterControlService;
+import com.livestream.realtime.LiveRoomHub;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Base64;
@@ -24,21 +29,30 @@ public class StreamService {
     private final UserDAO userDAO;
     private final LiveStreamDAO liveStreamDAO;
     private final VideoService videoService;
+    private final LiveRoomHub liveRoomHub;
+    private final IngestHealthService ingestHealthService;
+    private final BroadcasterControlService broadcasterControlService;
 
     @Inject
     public StreamService(
             LiveStreamConfiguration configuration,
             UserDAO userDAO,
             LiveStreamDAO liveStreamDAO,
-            VideoService videoService) {
+            VideoService videoService,
+            LiveRoomHub liveRoomHub,
+            IngestHealthService ingestHealthService,
+            BroadcasterControlService broadcasterControlService) {
         this.configuration = configuration;
         this.userDAO = userDAO;
         this.liveStreamDAO = liveStreamDAO;
         this.videoService = videoService;
+        this.liveRoomHub = liveRoomHub;
+        this.ingestHealthService = ingestHealthService;
+        this.broadcasterControlService = broadcasterControlService;
     }
 
     public List<StreamResponse> listLiveStreams() {
-        return liveStreamDAO.findByStatus(StreamStatus.LIVE).stream()
+        return liveStreamDAO.findBroadcasting().stream()
                 .map(stream -> {
                     StreamResponse response = StreamResponse.from(stream);
                     videoService.applyPlaybackUrls(response, stream);
@@ -59,7 +73,7 @@ public class StreamService {
             throw new IllegalStateException("Broadcaster already has a live stream");
         }
 
-        if (usesLocalCamera() && liveStreamDAO.countByStatus(StreamStatus.LIVE) > 0) {
+        if (usesLocalCamera() && liveStreamDAO.countBroadcasting() > 0) {
             throw new IllegalStateException(
                     "Only one live stream at a time while using the laptop camera. Stop the current stream first.");
         }
@@ -78,21 +92,125 @@ public class StreamService {
         } catch (java.io.IOException e) {
             throw new IllegalStateException("Failed to start video engine: " + e.getMessage(), e);
         }
+        broadcasterControlService.onStreamStarted(saved.getId());
         StreamResponse response = StreamResponse.from(saved);
         videoService.applyPlaybackUrls(response, saved);
+        return response;
+    }
+
+    public StreamResponse pauseStream(Long streamId) {
+        LiveStream stream = liveStreamDAO.findById(streamId)
+                .orElseThrow(() -> new IllegalArgumentException("Stream not found: " + streamId));
+        if (stream.getStatus() != StreamStatus.LIVE) {
+            throw new IllegalStateException("Stream is not live (cannot pause): " + streamId);
+        }
+        stream.setStatus(StreamStatus.PAUSED);
+        StreamResponse response = StreamResponse.from(stream);
+        videoService.applyPlaybackUrls(response, stream);
+        return response;
+    }
+
+    public StreamResponse resumeStream(Long streamId) {
+        LiveStream stream = liveStreamDAO.findById(streamId)
+                .orElseThrow(() -> new IllegalArgumentException("Stream not found: " + streamId));
+        if (stream.getStatus() != StreamStatus.PAUSED) {
+            throw new IllegalStateException("Stream is not paused: " + streamId);
+        }
+        stream.setStatus(StreamStatus.LIVE);
+        StreamResponse response = StreamResponse.from(stream);
+        videoService.applyPlaybackUrls(response, stream);
         return response;
     }
 
     public StreamResponse stopStream(Long streamId) {
         LiveStream stream = liveStreamDAO.findById(streamId)
                 .orElseThrow(() -> new IllegalArgumentException("Stream not found: " + streamId));
-        if (stream.getStatus() != StreamStatus.LIVE) {
-            throw new IllegalStateException("Stream is not live: " + streamId);
+        if (stream.getStatus() != StreamStatus.LIVE && stream.getStatus() != StreamStatus.PAUSED) {
+            throw new IllegalStateException("Stream is not active: " + streamId);
         }
+        endActiveStream(streamId, stream);
+        return StreamResponse.from(stream);
+    }
+
+    public void broadcasterHeartbeat(long streamId) {
+        LiveStream stream = liveStreamDAO.findById(streamId)
+                .orElseThrow(() -> new IllegalArgumentException("Stream not found: " + streamId));
+        if (stream.getStatus() != StreamStatus.LIVE && stream.getStatus() != StreamStatus.PAUSED) {
+            throw new IllegalStateException("Stream is not active: " + streamId);
+        }
+        broadcasterControlService.touch(streamId);
+    }
+
+    public void simulateIngestUnstable(long streamId, int durationSec) {
+        if (!configuration.isDevMode()) {
+            throw new IllegalStateException("Ingest demo simulation is only available in dev mode");
+        }
+        LiveStream stream = liveStreamDAO.findById(streamId)
+                .orElseThrow(() -> new IllegalArgumentException("Stream not found: " + streamId));
+        if (stream.getStatus() != StreamStatus.LIVE && stream.getStatus() != StreamStatus.PAUSED) {
+            throw new IllegalStateException("Stream is not active: " + streamId);
+        }
+        ingestHealthService.simulateUnstable(streamId, durationSec);
+    }
+
+    private void endActiveStream(long streamId, LiveStream stream) {
         videoService.stopForStream(streamId);
+        ingestHealthService.clear(streamId);
+        broadcasterControlService.onStreamStopped(streamId);
+        liveRoomHub.closeRoom(streamId);
         stream.setStatus(StreamStatus.ENDED);
         stream.setEndedAt(Instant.now());
-        return StreamResponse.from(stream);
+    }
+
+    public void dropCoupon(Long streamId, String code, int percentOff, int durationSec) {
+        liveStreamDAO.findById(streamId)
+                .orElseThrow(() -> new IllegalArgumentException("Stream not found: " + streamId));
+        liveRoomHub.dropCoupon(streamId, code.toUpperCase(), percentOff, durationSec);
+    }
+
+    public JoinResponse joinRoom(Long streamId) {
+        liveStreamDAO.findById(streamId)
+                .orElseThrow(() -> new IllegalArgumentException("Stream not found: " + streamId));
+        String presenceId = liveRoomHub.join(streamId);
+        return new JoinResponse(presenceId, enrichRoom(streamId, liveRoomHub.snapshot(streamId)));
+    }
+
+    public RoomSnapshot heartbeat(Long streamId, String presenceId) {
+        liveRoomHub.heartbeat(streamId, presenceId);
+        return enrichRoom(streamId, liveRoomHub.snapshot(streamId));
+    }
+
+    public void leaveRoom(Long streamId, String presenceId) {
+        liveRoomHub.leave(streamId, presenceId);
+    }
+
+    public RoomSnapshot roomSnapshot(Long streamId) {
+        return enrichRoom(streamId, liveRoomHub.snapshot(streamId));
+    }
+
+    public RoomSnapshot recordLike(Long streamId, String presenceId) {
+        liveRoomHub.heartbeat(streamId, presenceId);
+        liveRoomHub.recordLike(streamId);
+        return enrichRoom(streamId, liveRoomHub.snapshot(streamId));
+    }
+
+    private RoomSnapshot enrichRoom(long streamId, RoomSnapshot base) {
+        var ingest = ingestHealthService.snapshot(streamId);
+        boolean showIngest = ingest.monitoring() || ingest.unstable();
+        if (!showIngest) {
+            return base;
+        }
+        String warning = ingest.unstable()
+                ? (ingest.reason() != null ? ingest.reason() : "Network unstable — check your upload")
+                : null;
+        return new RoomSnapshot(
+                base.getViewers(),
+                base.getLikes(),
+                base.getCoupon(),
+                base.getStreamStatus(),
+                ingest.unstable(),
+                ingest.ingestKbps(),
+                warning);
     }
 
     private boolean usesLocalCamera() {
