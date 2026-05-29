@@ -13,5 +13,5 @@ if pgrep -x mediamtx >/dev/null 2>&1; then
   echo "Or: pkill mediamtx"
   exit 1
 fi
-echo "Starting MediaMTX (RTMP :1935, WebRTC :8889)…"
+echo "Starting MediaMTX (RTMP :1935, WebRTC :8889, LAN WebRTC host 192.168.29.140)…"
 exec mediamtx mediamtx.yml

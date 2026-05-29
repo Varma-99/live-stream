@@ -18,8 +18,9 @@ rtmpAddress: :1935
 webrtc: yes
 webrtcAddress: :8889
 
-# Local dev: host candidates only — skip public STUN round-trips (~100–500ms saved on connect)
-webrtcAdditionalHosts: [127.0.0.1, localhost]
+# Method A: LAN host for phones on Wi-Fi + localhost for Mac streamer
+webrtcAdditionalHosts: [127.0.0.1, localhost, 192.168.29.140]
+webrtcAllowOrigin: "*"
 webrtcSTUNGatherTimeout: 1s
 webrtcTrackGatherTimeout: 1s
 

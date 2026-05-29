@@ -5,9 +5,11 @@ server:
   applicationConnectors:
     - type: http
       port: 8080
+      bindHost: 0.0.0.0
   adminConnectors:
     - type: http
       port: 8081
+      bindHost: 0.0.0.0
 
 logging:
   level: INFO
@@ -40,13 +42,16 @@ cameraDevice: "0:0"
 useTestVideo: false
 rtmpPort: 1935
 
+# Method A (LAN): phones use publicWebBase + mediamtxWebrtcBase; FFmpeg ingest stays localhost.
+publicWebBase: http://192.168.29.140:8080
+
 # Delivery: mediamtx = FFmpeg → RTMP → MediaMTX → WebRTC (low latency). hls = file-based HLS.
 streamDelivery: mediamtx
 mediamtxRtmpPublishBase: rtmp://127.0.0.1:1935
-mediamtxWebrtcBase: http://127.0.0.1:8889
+mediamtxWebrtcBase: http://192.168.29.140:8889
 mediamtxApiBase: http://127.0.0.1:9997
 mediamtxApiEnabled: true
 abrEnabled: true
 
-# MediaMTX mode: ultrafast + zerolatency, 0.5s GOP, localhost WebRTC (see FfmpegCommandBuilder)
+# MediaMTX mode: ultrafast + zerolatency, 0.5s GOP (see FfmpegCommandBuilder)
 # HLS mode only (streamDelivery: hls): 2s segments, GOP 30 frames

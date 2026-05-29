@@ -4,6 +4,7 @@ import com.google.inject.Guice;
 import com.google.inject.Injector;
 import com.livestream.api.IllegalArgumentExceptionMapper;
 import com.livestream.api.IllegalStateExceptionMapper;
+import com.livestream.api.ConfigResource;
 import com.livestream.api.StreamResource;
 import com.livestream.health.AppHealthCheck;
 import com.livestream.service.DevDataSeeder;
@@ -70,6 +71,7 @@ public class LiveStreamApplication extends Application<LiveStreamConfiguration> 
 
         environment.healthChecks().register("app", new AppHealthCheck());
         environment.jersey().register(injector.getInstance(StreamResource.class));
+        environment.jersey().register(injector.getInstance(ConfigResource.class));
         environment.jersey().register(new IllegalArgumentExceptionMapper());
         environment.jersey().register(new IllegalStateExceptionMapper());
 
@@ -80,9 +82,13 @@ public class LiveStreamApplication extends Application<LiveStreamConfiguration> 
 
         LOGGER.info("live-stream started — delivery={}", configuration.getStreamDelivery());
         LOGGER.info("REST: streams, coupon, join/heartbeat/room (viewer count)");
-        LOGGER.info("Web UI: http://localhost:8080/ui/");
+        LOGGER.info("Web UI (this machine): http://localhost:8080/ui/");
+        if (configuration.getPublicWebBase() != null && !configuration.getPublicWebBase().isBlank()) {
+            LOGGER.info("Web UI (Wi-Fi / LAN): {}/ui/", configuration.getPublicWebBase().replaceAll("/$", ""));
+        }
         if (configuration.isMediamtxDelivery()) {
             LOGGER.info("MediaMTX: run ./scripts/start-mediamtx.sh (RTMP :1935, WebRTC :8889, API :9997)");
+            LOGGER.info("WHEP playback base: {}", configuration.getMediamtxWebrtcBase());
             if (configuration.isAbrEnabled()) {
                 LOGGER.info("ABR: 3 RTMP/WHEP rungs (high/mid/low) — viewer switches URL from WebRTC stats");
             }

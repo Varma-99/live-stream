@@ -37,7 +37,9 @@
       </div>
       <p class="muted" id="degradeHint" style="display:none;margin-top:0.5rem">Degrade sends real choppy video to viewers — watch the viewer tab quality line drop.</p>
       <p class="links" id="watchLinks" style="display:none">
-        Viewers open: <a id="watchLink" href="#" target="_blank">watch link</a>
+        Watch on Wi-Fi (phone / other device):<br>
+        <a id="watchLinkLan" href="#" target="_blank">LAN watch link</a><br>
+        <span class="muted">On this Mac only: <a id="watchLinkLocal" href="#" target="_blank">localhost link</a></span>
       </p>
     </div>
 
@@ -81,8 +83,29 @@
     let stopPoll = null;
     let stopBroadcasterHeartbeat = null;
     let endingIntentionally = false;
+    let publicWebBase = location.origin;
 
     const msgEl = document.getElementById('message');
+
+    async function loadPublicConfig() {
+      try {
+        const cfg = await fetch('/config/public').then(r => r.json());
+        if (cfg.publicWebBase) publicWebBase = cfg.publicWebBase.replace(/\/$/, '');
+      } catch (e) {
+        console.warn('public config unavailable', e);
+      }
+    }
+
+    function setWatchLinks(streamId) {
+      const lan = publicWebBase + '/ui/viewer.html?stream=' + streamId;
+      const local = location.origin + '/ui/viewer.html?stream=' + streamId;
+      const aLan = document.getElementById('watchLinkLan');
+      const aLocal = document.getElementById('watchLinkLocal');
+      aLan.href = lan;
+      aLan.textContent = lan;
+      aLocal.href = local;
+      aLocal.textContent = local;
+    }
 
     /** Works even if the browser cached an old presence.js without broadcaster heartbeat. */
     function startBroadcasterHeartbeatSafe(streamId) {
@@ -167,10 +190,7 @@
       if (on && streamId) {
         currentStreamId = streamId;
         updatePauseButtons(status || 'LIVE');
-        const link = location.origin + '/ui/viewer.html?stream=' + streamId;
-        const a = document.getElementById('watchLink');
-        a.href = link;
-        a.textContent = link;
+        setWatchLinks(streamId);
         stopBroadcasterHeartbeat = startBroadcasterHeartbeatSafe(streamId);
         stopPoll = Presence.startBroadcasterPoll(streamId, handleRoomUpdate);
       } else {
@@ -361,6 +381,7 @@
     };
 
     refreshLive();
+    loadPublicConfig();
   </script>
 </body>
 </html>
