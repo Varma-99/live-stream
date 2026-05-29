@@ -15,6 +15,7 @@ import com.livestream.api.dto.RoomSnapshot;
 import com.livestream.mediamtx.IngestHealthService;
 import com.livestream.realtime.BroadcasterControlService;
 import com.livestream.realtime.LiveRoomHub;
+import java.io.IOException;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Base64;
@@ -142,15 +143,50 @@ public class StreamService {
     }
 
     public void simulateIngestUnstable(long streamId, int durationSec) {
-        if (!configuration.isDevMode()) {
-            throw new IllegalStateException("Ingest demo simulation is only available in dev mode");
+        requireDevMode();
+        LiveStream stream = requireActiveStream(streamId);
+        ingestHealthService.simulateUnstable(streamId, durationSec);
+    }
+
+    public StreamResponse degradeStreamQuality(long streamId) {
+        requireDevMode();
+        LiveStream stream = requireActiveStream(streamId);
+        try {
+            videoService.degradeStream(stream);
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to degrade stream: " + e.getMessage(), e);
         }
+        StreamResponse response = StreamResponse.from(stream);
+        videoService.applyPlaybackUrls(response, stream);
+        return response;
+    }
+
+    public StreamResponse restoreStreamQuality(long streamId) {
+        requireDevMode();
+        LiveStream stream = requireActiveStream(streamId);
+        try {
+            videoService.restoreStreamQuality(stream);
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to restore stream quality: " + e.getMessage(), e);
+        }
+        StreamResponse response = StreamResponse.from(stream);
+        videoService.applyPlaybackUrls(response, stream);
+        return response;
+    }
+
+    private void requireDevMode() {
+        if (!configuration.isDevMode()) {
+            throw new IllegalStateException("This action is only available in dev mode");
+        }
+    }
+
+    private LiveStream requireActiveStream(long streamId) {
         LiveStream stream = liveStreamDAO.findById(streamId)
                 .orElseThrow(() -> new IllegalArgumentException("Stream not found: " + streamId));
         if (stream.getStatus() != StreamStatus.LIVE && stream.getStatus() != StreamStatus.PAUSED) {
             throw new IllegalStateException("Stream is not active: " + streamId);
         }
-        ingestHealthService.simulateUnstable(streamId, durationSec);
+        return stream;
     }
 
     private void endActiveStream(long streamId, LiveStream stream) {
@@ -197,7 +233,8 @@ public class StreamService {
     private RoomSnapshot enrichRoom(long streamId, RoomSnapshot base) {
         var ingest = ingestHealthService.snapshot(streamId);
         boolean showIngest = ingest.monitoring() || ingest.unstable();
-        if (!showIngest) {
+        boolean encodeDegraded = videoService.isDegraded(streamId);
+        if (!showIngest && !encodeDegraded) {
             return base;
         }
         String warning = ingest.unstable()
@@ -210,7 +247,8 @@ public class StreamService {
                 base.getStreamStatus(),
                 ingest.unstable(),
                 ingest.ingestKbps(),
-                warning);
+                warning,
+                encodeDegraded);
     }
 
     private boolean usesLocalCamera() {

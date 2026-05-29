@@ -127,4 +127,18 @@ public class StreamResource {
         streamService.simulateIngestUnstable(streamId, request.getDurationSec());
         return Response.noContent().build();
     }
+
+    @POST
+    @Path("/{id}/degrade")
+    @UnitOfWork
+    public StreamResponse degradeStream(@PathParam("id") Long streamId) {
+        return streamService.degradeStreamQuality(streamId);
+    }
+
+    @POST
+    @Path("/{id}/restore-quality")
+    @UnitOfWork
+    public StreamResponse restoreStreamQuality(@PathParam("id") Long streamId) {
+        return streamService.restoreStreamQuality(streamId);
+    }
 }

@@ -31,8 +31,11 @@
       <p class="stat" id="viewerStat" style="display:none">👀 0 watching</p>
       <p class="ingest-warn" id="ingestWarn" style="display:none" role="alert"></p>
       <div class="actions" id="demoPanel" style="display:none">
-        <button class="btn" type="button" id="ingestDemoBtn" title="Dev only: fake low upload for banner demo">Simulate network drop (demo)</button>
+        <button class="btn" type="button" id="degradeBtn" title="Restart FFmpeg at 100k / 5fps on all ABR paths">Degrade stream (demo)</button>
+        <button class="btn primary" type="button" id="restoreBtn" style="display:none" title="Restart FFmpeg at normal ABR quality">Restore quality</button>
+        <button class="btn" type="button" id="ingestDemoBtn" title="Dev only: fake low upload for streamer banner">Simulate upload warning (demo)</button>
       </div>
+      <p class="muted" id="degradeHint" style="display:none;margin-top:0.5rem">Degrade sends real choppy video to viewers — watch the viewer tab quality line drop.</p>
       <p class="links" id="watchLinks" style="display:none">
         Viewers open: <a id="watchLink" href="#" target="_blank">watch link</a>
       </p>
@@ -71,7 +74,7 @@
     </div>
   </div>
 
-  <script src="/ui/presence.js?v=2"></script>
+  <script src="/ui/presence.js?v=3"></script>
   <script>
     let currentStreamId = null;
     let streamStatus = null;
@@ -111,6 +114,12 @@
       }
     }
 
+    function updateDegradeButtons(degraded) {
+      document.getElementById('degradeBtn').style.display = degraded ? 'none' : 'inline-block';
+      document.getElementById('restoreBtn').style.display = degraded ? 'inline-block' : 'none';
+      document.getElementById('degradeHint').style.display = 'block';
+    }
+
     function handleRoomUpdate(room) {
       if (room.streamStatus === 'ENDED') {
         setLive(false);
@@ -120,6 +129,7 @@
       document.getElementById('viewerStat').textContent = '👀 ' + room.viewers + ' watching';
       if (room.streamStatus) updatePauseButtons(room.streamStatus);
       applyIngestWarning(room);
+      if (typeof room.encodeDegraded === 'boolean') updateDegradeButtons(room.encodeDegraded);
     }
 
     function updatePauseButtons(status) {
@@ -142,6 +152,8 @@
       document.getElementById('watchLinks').style.display = on ? 'block' : 'none';
       document.getElementById('couponPanel').style.display = on ? 'block' : 'none';
       document.getElementById('demoPanel').style.display = on ? 'flex' : 'none';
+      document.getElementById('degradeHint').style.display = on ? 'block' : 'none';
+      if (on) updateDegradeButtons(false);
 
       if (stopPoll) {
         stopPoll();
@@ -175,8 +187,10 @@
       try {
         const list = await fetch('/streams').then(r => r.json());
         const mine = list.find(s => s.broadcasterId === 1);
-        if (mine) setLive(true, mine.id, mine.status);
-        else setLive(false);
+        if (mine) {
+          setLive(true, mine.id, mine.status);
+          updateDegradeButtons(!!mine.encodeDegraded);
+        } else setLive(false);
       } catch (e) {
         showMessage('Server not running?', false);
       }
@@ -261,6 +275,38 @@
       } catch (e) {
         showMessage(String(e), false);
         endingIntentionally = false;
+      }
+    };
+
+    document.getElementById('degradeBtn').onclick = async () => {
+      if (!currentStreamId) return;
+      try {
+        const r = await fetch('/streams/' + currentStreamId + '/degrade', { method: 'POST' });
+        const data = await r.json();
+        if (!r.ok) {
+          showMessage(data.error || 'Degrade failed', false);
+          return;
+        }
+        updateDegradeButtons(true);
+        showMessage('Stream degraded (100k / 5fps). Viewers should step down via ABR in a few seconds.', true);
+      } catch (e) {
+        showMessage(String(e), false);
+      }
+    };
+
+    document.getElementById('restoreBtn').onclick = async () => {
+      if (!currentStreamId) return;
+      try {
+        const r = await fetch('/streams/' + currentStreamId + '/restore-quality', { method: 'POST' });
+        const data = await r.json();
+        if (!r.ok) {
+          showMessage(data.error || 'Restore failed', false);
+          return;
+        }
+        updateDegradeButtons(false);
+        showMessage('Normal quality restored. Viewers can step back up if their download allows.', true);
+      } catch (e) {
+        showMessage(String(e), false);
       }
     };
 

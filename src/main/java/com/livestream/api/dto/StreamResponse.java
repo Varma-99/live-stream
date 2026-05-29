@@ -47,6 +47,10 @@ public class StreamResponse {
     @JsonProperty
     private List<QualityOption> qualities;
 
+    /** Dev demo: FFmpeg running with throttled encode (100k / 5fps). */
+    @JsonProperty
+    private boolean encodeDegraded;
+
     public static StreamResponse from(LiveStream stream) {
         StreamResponse response = new StreamResponse();
         response.id = stream.getId();
@@ -76,8 +80,16 @@ public class StreamResponse {
         this.qualities = qualities;
     }
 
+    public void setEncodeDegraded(boolean encodeDegraded) {
+        this.encodeDegraded = encodeDegraded;
+    }
+
     public List<QualityOption> getQualities() {
         return qualities;
+    }
+
+    public boolean isEncodeDegraded() {
+        return encodeDegraded;
     }
 
     public String getDelivery() {

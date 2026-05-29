@@ -29,6 +29,7 @@ public class VideoService implements Managed {
 
     private final LiveStreamConfiguration configuration;
     private final Map<Long, Process> processes = new ConcurrentHashMap<>();
+    private final Map<Long, Boolean> degradedStreams = new ConcurrentHashMap<>();
 
     @Inject
     public VideoService(LiveStreamConfiguration configuration) {
@@ -43,7 +44,39 @@ public class VideoService implements Managed {
         return isMediamtxDelivery() && configuration.isAbrEnabled();
     }
 
+    public boolean isDegraded(long streamId) {
+        return degradedStreams.getOrDefault(streamId, false);
+    }
+
     public void startForStream(LiveStream stream) throws IOException {
+        startFfmpeg(stream, false);
+    }
+
+    public void degradeStream(LiveStream stream) throws IOException {
+        if (!isAbrEnabled()) {
+            throw new IllegalStateException("Degrade demo requires MediaMTX ABR (abrEnabled: true)");
+        }
+        restartFfmpeg(stream, true);
+    }
+
+    public void restoreStreamQuality(LiveStream stream) throws IOException {
+        if (!isAbrEnabled()) {
+            throw new IllegalStateException("Restore requires MediaMTX ABR (abrEnabled: true)");
+        }
+        restartFfmpeg(stream, false);
+    }
+
+    private void restartFfmpeg(LiveStream stream, boolean degraded) throws IOException {
+        Long streamId = stream.getId();
+        if (!processes.containsKey(streamId)) {
+            throw new IllegalStateException("FFmpeg is not running for stream " + streamId);
+        }
+        stopForStream(streamId);
+        startFfmpeg(stream, degraded);
+        LOGGER.info("FFmpeg restarted for stream {} (degraded={})", streamId, degraded);
+    }
+
+    private void startFfmpeg(LiveStream stream, boolean degraded) throws IOException {
         Long streamId = stream.getId();
         if (processes.containsKey(streamId)) {
             throw new IllegalStateException("FFmpeg already running for stream " + streamId);
@@ -60,24 +93,35 @@ public class VideoService implements Managed {
             Files.createDirectories(outputDir);
         }
 
-        List<String> command = buildFfmpegCommand(ffmpeg.toString(), outputDir, stream);
+        List<String> command = buildFfmpegCommand(ffmpeg.toString(), outputDir, stream, degraded);
 
         ProcessBuilder builder = new ProcessBuilder(command);
         builder.redirectErrorStream(true);
         Process process = builder.start();
 
         processes.put(streamId, process);
+        if (degraded) {
+            degradedStreams.put(streamId, true);
+        } else {
+            degradedStreams.remove(streamId);
+        }
+
         LOGGER.info(
-                "FFmpeg started for stream {} (pid={}, delivery={}, abr={}, input={})",
+                "FFmpeg started for stream {} (pid={}, delivery={}, abr={}, degraded={}, input={})",
                 streamId,
                 process.pid(),
                 configuration.getStreamDelivery(),
                 isAbrEnabled(),
+                degraded,
                 resolveInputMode());
         if (isMediamtxDelivery()) {
             if (isAbrEnabled()) {
                 String key = stream.getStreamKey();
-                LOGGER.info("MediaMTX ABR RTMP: high={}, mid={}, low={}", rtmpPublishUrl(key, "_high"), rtmpPublishUrl(key, "_mid"), rtmpPublishUrl(key, "_low"));
+                LOGGER.info(
+                        "MediaMTX ABR RTMP: high={}, mid={}, low={}",
+                        rtmpPublishUrl(key, "_high"),
+                        rtmpPublishUrl(key, "_mid"),
+                        rtmpPublishUrl(key, "_low"));
             } else {
                 LOGGER.info("MediaMTX RTMP publish: {}", rtmpPublishUrl(stream.getStreamKey(), ""));
                 LOGGER.info("WebRTC WHEP playback: {}", whepPlaybackUrl(stream.getStreamKey(), ""));
@@ -91,7 +135,8 @@ public class VideoService implements Managed {
         logThread.start();
     }
 
-    private List<String> buildFfmpegCommand(String ffmpegPath, Path outputDir, LiveStream stream) {
+    private List<String> buildFfmpegCommand(
+            String ffmpegPath, Path outputDir, LiveStream stream, boolean degraded) {
         if (isMediamtxDelivery()) {
             String streamKey = stream.getStreamKey();
             if (isAbrEnabled()) {
@@ -105,9 +150,9 @@ public class VideoService implements Managed {
                                     "videoInput=camera requires macOS. Use videoInput: test");
                         }
                         yield FfmpegCommandBuilder.avfoundationCameraToMediamtxAbr(
-                                ffmpegPath, configuration.getCameraDevice(), high, mid, low);
+                                ffmpegPath, configuration.getCameraDevice(), high, mid, low, degraded);
                     }
-                    default -> FfmpegCommandBuilder.testPatternToMediamtxAbr(ffmpegPath, high, mid, low);
+                    default -> FfmpegCommandBuilder.testPatternToMediamtxAbr(ffmpegPath, high, mid, low, degraded);
                 };
             }
             String rtmpUrl = rtmpPublishUrl(streamKey, "");
@@ -181,6 +226,7 @@ public class VideoService implements Managed {
             response.setWebrtcWhepUrl(null);
             response.setQualities(null);
         }
+        response.setEncodeDegraded(isDegraded(stream.getId()));
     }
 
     private String resolveInputMode() {
@@ -193,6 +239,7 @@ public class VideoService implements Managed {
 
     public void stopForStream(Long streamId) {
         Process process = processes.remove(streamId);
+        degradedStreams.remove(streamId);
         if (process == null) {
             return;
         }

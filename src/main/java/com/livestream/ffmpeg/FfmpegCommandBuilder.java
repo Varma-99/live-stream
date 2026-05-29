@@ -15,6 +15,16 @@ public final class FfmpegCommandBuilder {
     /** MediaMTX WebRTC: 15 frames @ 30fps ≈ 0.5s between keyframes. */
     private static final String GOP_FRAMES_MEDIAMTX = "15";
 
+    private static final String GOP_FRAMES_DEGRADED = "5";
+
+    private static final String DEGRADED_VIDEO_BITRATE = "100k";
+
+    private static final String ABR_FILTER_NORMAL =
+            "[0:v]split=3[v1][v2][v3];[v1]scale=1280:720:flags=fast_bilinear[vhi];[v2]scale=854:480:flags=fast_bilinear[vmd];[v3]scale=640:360:flags=fast_bilinear[vlo]";
+
+    private static final String ABR_FILTER_DEGRADED =
+            "[0:v]split=3[v1][v2][v3];[v1]scale=1280:720:flags=fast_bilinear,fps=5[vhi];[v2]scale=854:480:flags=fast_bilinear,fps=5[vmd];[v3]scale=640:360:flags=fast_bilinear,fps=5[vlo]";
+
     /** HLS segment length in seconds — smaller = lower latency. */
     private static final String HLS_SEGMENT_SECONDS = "2";
 
@@ -155,7 +165,12 @@ public final class FfmpegCommandBuilder {
      * Three RTMP outputs (high / mid / low) for fallback ABR — separate MediaMTX paths + WHEP URLs.
      */
     public static List<String> avfoundationCameraToMediamtxAbr(
-            String ffmpegPath, String device, String rtmpPublishUrlHigh, String rtmpPublishUrlMid, String rtmpPublishUrlLow) {
+            String ffmpegPath,
+            String device,
+            String rtmpPublishUrlHigh,
+            String rtmpPublishUrlMid,
+            String rtmpPublishUrlLow,
+            boolean degraded) {
         List<String> command = new ArrayList<>();
         command.add(ffmpegPath);
         command.add("-y");
@@ -169,47 +184,66 @@ public final class FfmpegCommandBuilder {
         command.add("-i");
         command.add(device);
         command.add("-filter_complex");
-        command.add(
-                "[0:v]split=3[v1][v2][v3];[v1]scale=1280:720:flags=fast_bilinear[vhi];[v2]scale=854:480:flags=fast_bilinear[vmd];[v3]scale=640:360:flags=fast_bilinear[vlo]");
-        appendMediamtxAbrOutput(command, "[vhi]", "0:a:0", "2500k", rtmpPublishUrlHigh);
-        appendMediamtxAbrOutput(command, "[vmd]", "0:a:0", "1200k", rtmpPublishUrlMid);
-        appendMediamtxAbrOutput(command, "[vlo]", "0:a:0", "600k", rtmpPublishUrlLow);
+        command.add(degraded ? ABR_FILTER_DEGRADED : ABR_FILTER_NORMAL);
+        if (degraded) {
+            appendMediamtxAbrOutput(command, "[vhi]", "0:a:0", DEGRADED_VIDEO_BITRATE, rtmpPublishUrlHigh, true);
+            appendMediamtxAbrOutput(command, "[vmd]", "0:a:0", DEGRADED_VIDEO_BITRATE, rtmpPublishUrlMid, true);
+            appendMediamtxAbrOutput(command, "[vlo]", "0:a:0", DEGRADED_VIDEO_BITRATE, rtmpPublishUrlLow, true);
+        } else {
+            appendMediamtxAbrOutput(command, "[vhi]", "0:a:0", "2500k", rtmpPublishUrlHigh, false);
+            appendMediamtxAbrOutput(command, "[vmd]", "0:a:0", "1200k", rtmpPublishUrlMid, false);
+            appendMediamtxAbrOutput(command, "[vlo]", "0:a:0", "600k", rtmpPublishUrlLow, false);
+        }
         return command;
     }
 
     public static List<String> testPatternToMediamtxAbr(
-            String ffmpegPath, String rtmpPublishUrlHigh, String rtmpPublishUrlMid, String rtmpPublishUrlLow) {
+            String ffmpegPath,
+            String rtmpPublishUrlHigh,
+            String rtmpPublishUrlMid,
+            String rtmpPublishUrlLow,
+            boolean degraded) {
         List<String> command = new ArrayList<>();
         command.add(ffmpegPath);
         command.add("-y");
         command.add("-f");
         command.add("lavfi");
         command.add("-i");
-        command.add("testsrc=size=1280x720:rate=30");
+        command.add(degraded ? "testsrc=size=1280x720:rate=5" : "testsrc=size=1280x720:rate=30");
         command.add("-f");
         command.add("lavfi");
         command.add("-i");
         command.add("sine=frequency=440:sample_rate=44100");
         command.add("-filter_complex");
-        command.add(
-                "[0:v]split=3[v1][v2][v3];[v1]scale=1280:720:flags=fast_bilinear[vhi];[v2]scale=854:480:flags=fast_bilinear[vmd];[v3]scale=640:360:flags=fast_bilinear[vlo]");
-        appendMediamtxAbrOutput(command, "[vhi]", "1:a:0", "2500k", rtmpPublishUrlHigh);
-        appendMediamtxAbrOutput(command, "[vmd]", "1:a:0", "1200k", rtmpPublishUrlMid);
-        appendMediamtxAbrOutput(command, "[vlo]", "1:a:0", "600k", rtmpPublishUrlLow);
+        command.add(degraded ? ABR_FILTER_DEGRADED : ABR_FILTER_NORMAL);
+        if (degraded) {
+            appendMediamtxAbrOutput(command, "[vhi]", "1:a:0", DEGRADED_VIDEO_BITRATE, rtmpPublishUrlHigh, true);
+            appendMediamtxAbrOutput(command, "[vmd]", "1:a:0", DEGRADED_VIDEO_BITRATE, rtmpPublishUrlMid, true);
+            appendMediamtxAbrOutput(command, "[vlo]", "1:a:0", DEGRADED_VIDEO_BITRATE, rtmpPublishUrlLow, true);
+        } else {
+            appendMediamtxAbrOutput(command, "[vhi]", "1:a:0", "2500k", rtmpPublishUrlHigh, false);
+            appendMediamtxAbrOutput(command, "[vmd]", "1:a:0", "1200k", rtmpPublishUrlMid, false);
+            appendMediamtxAbrOutput(command, "[vlo]", "1:a:0", "600k", rtmpPublishUrlLow, false);
+        }
         return command;
     }
 
     private static void appendMediamtxAbrOutput(
-            List<String> command, String videoLabel, String audioMap, String videoBitrate, String rtmpUrl) {
+            List<String> command,
+            String videoLabel,
+            String audioMap,
+            String videoBitrate,
+            String rtmpUrl,
+            boolean degraded) {
         command.add("-map");
         command.add(videoLabel);
         command.add("-map");
         command.add(audioMap);
-        appendMediamtxVideoEncoding(command, videoBitrate);
+        appendMediamtxVideoEncoding(command, videoBitrate, degraded);
         appendFlvPublish(command, rtmpUrl);
     }
 
-    private static void appendMediamtxVideoEncoding(List<String> command, String videoBitrate) {
+    private static void appendMediamtxVideoEncoding(List<String> command, String videoBitrate, boolean degraded) {
         command.add("-c:v");
         command.add("libx264");
         command.add("-preset");
@@ -220,10 +254,11 @@ public final class FfmpegCommandBuilder {
         command.add("baseline");
         command.add("-pix_fmt");
         command.add("yuv420p");
+        String gop = degraded ? GOP_FRAMES_DEGRADED : GOP_FRAMES_MEDIAMTX;
         command.add("-g");
-        command.add(GOP_FRAMES_MEDIAMTX);
+        command.add(gop);
         command.add("-keyint_min");
-        command.add(GOP_FRAMES_MEDIAMTX);
+        command.add(gop);
         command.add("-sc_threshold");
         command.add("0");
         command.add("-bf");

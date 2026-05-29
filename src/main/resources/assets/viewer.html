@@ -42,13 +42,13 @@
     </div>
   </div>
 
-  <script src="/ui/presence.js?v=2"></script>
+  <script src="/ui/presence.js?v=3"></script>
   <script>
     let hlsInstance = null;
     let whepPc = null;
     let qualities = [];
     let qualityIndex = 0;
-    let abrTimer = null;
+    let playbackTimer = null;
     let statsSample = null;
     let streamCatalog = [];
     let presenceId = null;
@@ -56,6 +56,17 @@
     let couponTimer = null;
     let activeStreamId = null;
     let activeCode = '';
+    let reconnecting = false;
+    let lastReconnectAt = 0;
+    let zeroKbpsStreak = 0;
+    let lastVideoBytes = 0;
+    let lastVideoBytesGrowthAt = 0;
+    let lastEncodeDegraded = null;
+
+    const PLAYBACK_TICK_MS = 2500;
+    const ZERO_KBPS_STREAK_LIMIT = 2;
+    const NO_BYTE_GROWTH_MS = 5000;
+    const RECONNECT_COOLDOWN_MS = 2500;
 
     const video = document.getElementById('video');
     const viewerStat = document.getElementById('viewerStat');
@@ -116,9 +127,25 @@
 
     function applyRoom(room) {
       viewerStat.textContent = '👀 ' + room.viewers + ' watching';
+      if (room.streamStatus === 'ENDED' && whepPc) {
+        stopPlayers();
+        playStatus.textContent = 'Stream ended.';
+        return;
+      }
       setPaused(room.streamStatus === 'PAUSED');
       if (room.coupon && room.coupon.expiresAt > Date.now()) {
         showCoupon(room.coupon);
+      }
+      if (whepPc && typeof room.encodeDegraded === 'boolean') {
+        if (lastEncodeDegraded !== null && lastEncodeDegraded !== room.encodeDegraded) {
+          if (room.encodeDegraded) {
+            const lower = Math.min(qualityIndex + 1, qualities.length - 1);
+            reconnectToQuality(lower, 'Streamer degraded video');
+          } else {
+            reconnectToQuality(0, 'Streamer restored quality');
+          }
+        }
+        lastEncodeDegraded = room.encodeDegraded;
       }
     }
 
@@ -156,13 +183,63 @@
     }
 
     function stopPlayers() {
-      if (abrTimer) { clearInterval(abrTimer); abrTimer = null; }
+      if (playbackTimer) { clearInterval(playbackTimer); playbackTimer = null; }
       statsSample = null;
+      zeroKbpsStreak = 0;
+      lastEncodeDegraded = null;
+      reconnecting = false;
       if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
       if (whepPc) { whepPc.close(); whepPc = null; }
       video.srcObject = null;
       document.getElementById('qualityBadge').style.display = 'none';
       setPaused(false);
+    }
+
+    function isPlaybackPaused() {
+      return pauseOverlay.classList.contains('show');
+    }
+
+    function canReconnect() {
+      return whepPc && qualities.length > 0 && !reconnecting && !isPlaybackPaused();
+    }
+
+    async function reconnectToQuality(index, reason) {
+      if (!canReconnect()) return;
+      const now = Date.now();
+      if (now - lastReconnectAt < RECONNECT_COOLDOWN_MS) return;
+      const target = Math.max(0, Math.min(index, qualities.length - 1));
+      const q = qualities[target];
+      if (!q) return;
+
+      reconnecting = true;
+      lastReconnectAt = now;
+      playStatus.textContent = reason + ' — reconnecting…';
+      try {
+        await connectWhep(q.webrtcWhepUrl);
+        qualityIndex = target;
+        zeroKbpsStreak = 0;
+        lastVideoBytesGrowthAt = Date.now();
+        updateQualityBadge(q.label, 0);
+        playStatus.textContent = 'Playing (' + q.label + ')';
+      } catch (e) {
+        playStatus.textContent = 'Reconnect failed — retrying…';
+        console.warn('reconnect failed', e);
+        if (target < qualities.length - 1) {
+          reconnecting = false;
+          await reconnectToQuality(target + 1, 'Trying lower quality');
+        } else {
+          playStatus.textContent = String(e);
+        }
+      } finally {
+        reconnecting = false;
+      }
+    }
+
+    async function handlePlaybackStall(reason) {
+      if (!canReconnect()) return;
+      const stepDown = qualityIndex < qualities.length - 1;
+      const target = stepDown ? qualityIndex + 1 : qualityIndex;
+      await reconnectToQuality(target, reason);
     }
 
     function updateQualityBadge(label, downloadKbps) {
@@ -172,8 +249,25 @@
       el.textContent = 'Quality: ' + label + dl;
     }
 
+    function attachPcHealthHandlers(pc) {
+      pc.onconnectionstatechange = () => {
+        const state = pc.connectionState;
+        if (state === 'failed' || state === 'disconnected') {
+          handlePlaybackStall('Connection ' + state);
+        }
+      };
+      pc.oniceconnectionstatechange = () => {
+        const state = pc.iceConnectionState;
+        if (state === 'failed' || state === 'disconnected') {
+          handlePlaybackStall('ICE ' + state);
+        }
+      };
+    }
+
     async function connectWhep(url) {
       if (whepPc) {
+        whepPc.onconnectionstatechange = null;
+        whepPc.oniceconnectionstatechange = null;
         whepPc.close();
         whepPc = null;
         video.srcObject = null;
@@ -181,11 +275,13 @@
       statsSample = null;
       const pc = new RTCPeerConnection({ iceServers: [] });
       whepPc = pc;
+      attachPcHealthHandlers(pc);
       pc.addTransceiver('video', { direction: 'recvonly' });
       pc.addTransceiver('audio', { direction: 'recvonly' });
       pc.ontrack = (ev) => {
         video.srcObject = ev.streams[0];
         video.play().catch(() => {});
+        lastVideoBytesGrowthAt = Date.now();
       };
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
@@ -196,57 +292,76 @@
       });
       if (!resp.ok) throw new Error('Video failed — run ./scripts/start-mediamtx.sh');
       await pc.setRemoteDescription({ type: 'answer', sdp: await resp.text() });
+      lastVideoBytesGrowthAt = Date.now();
     }
 
-    async function estimateDownloadKbps(pc) {
+    async function readVideoStats(pc) {
       const reports = await pc.getStats();
       let bytes = 0;
       reports.forEach((r) => {
-        if (r.type === 'inbound-rtp' && r.kind === 'video' && r.bytesReceived) {
-          bytes += r.bytesReceived;
+        if (r.type === 'inbound-rtp' && r.kind === 'video') {
+          bytes += r.bytesReceived || 0;
         }
       });
       const now = Date.now();
       if (!statsSample) {
         statsSample = { bytes, at: now };
-        return 0;
+        return { bytes, kbps: 0 };
       }
       const deltaBytes = Math.max(0, bytes - statsSample.bytes);
       const deltaMs = Math.max(1, now - statsSample.at);
       statsSample = { bytes, at: now };
-      return Math.round((deltaBytes * 8) / deltaMs);
+      return { bytes, kbps: Math.round((deltaBytes * 8) / deltaMs) };
     }
 
-    async function switchQuality(index) {
-      if (!qualities[index]) return;
-      qualityIndex = index;
-      const q = qualities[index];
-      playStatus.textContent = 'Switching to ' + q.label + '…';
-      await connectWhep(q.webrtcWhepUrl);
-      updateQualityBadge(q.label, 0);
-      playStatus.textContent = 'Playing (' + q.label + ')';
-    }
+    async function runPlaybackTick() {
+      if (!whepPc || reconnecting || isPlaybackPaused()) return;
 
-    function startAbrMonitor() {
-      if (abrTimer) clearInterval(abrTimer);
+      const { bytes, kbps } = await readVideoStats(whepPc);
+      const current = qualities[qualityIndex];
+      if (!current) return;
+
+      updateQualityBadge(current.label, kbps);
+
+      if (bytes > lastVideoBytes) {
+        lastVideoBytes = bytes;
+        lastVideoBytesGrowthAt = Date.now();
+      }
+
+      const noGrowth = Date.now() - lastVideoBytesGrowthAt > NO_BYTE_GROWTH_MS;
+
+      if (kbps <= 0) {
+        zeroKbpsStreak += 1;
+        if (noGrowth || zeroKbpsStreak >= ZERO_KBPS_STREAK_LIMIT) {
+          await handlePlaybackStall(noGrowth ? 'Video stalled' : 'No incoming data');
+        }
+        return;
+      }
+
+      zeroKbpsStreak = 0;
+
       if (qualities.length <= 1) return;
-      abrTimer = setInterval(async () => {
-        if (!whepPc || qualities.length <= 1) return;
-        const kbps = await estimateDownloadKbps(whepPc);
-        const current = qualities[qualityIndex];
-        updateQualityBadge(current.label, kbps);
-        if (kbps <= 0) return;
-        if (kbps < current.minDownloadKbps * 0.85 && qualityIndex < qualities.length - 1) {
-          await switchQuality(qualityIndex + 1);
-          return;
+
+      if (kbps < current.minDownloadKbps * 0.85 && qualityIndex < qualities.length - 1) {
+        await reconnectToQuality(qualityIndex + 1, 'Low download — stepping down');
+        return;
+      }
+      if (qualityIndex > 0) {
+        const upper = qualities[qualityIndex - 1];
+        if (kbps > upper.minDownloadKbps * 1.25) {
+          await reconnectToQuality(qualityIndex - 1, 'Stepping up');
         }
-        if (qualityIndex > 0) {
-          const upper = qualities[qualityIndex - 1];
-          if (kbps > upper.minDownloadKbps * 1.25) {
-            await switchQuality(qualityIndex - 1);
-          }
-        }
-      }, 3000);
+      }
+    }
+
+    function startPlaybackMonitor() {
+      if (playbackTimer) clearInterval(playbackTimer);
+      lastVideoBytes = 0;
+      lastVideoBytesGrowthAt = Date.now();
+      zeroKbpsStreak = 0;
+      playbackTimer = setInterval(() => {
+        runPlaybackTick().catch((e) => console.warn('playback tick', e));
+      }, PLAYBACK_TICK_MS);
     }
 
     async function playWebrtc(stream) {
@@ -255,9 +370,10 @@
         ? stream.qualities
         : [{ id: 'high', label: '720p', webrtcWhepUrl: stream.webrtcWhepUrl, minDownloadKbps: 800 }];
       qualityIndex = 0;
+      lastEncodeDegraded = !!stream.encodeDegraded;
       await connectWhep(qualities[0].webrtcWhepUrl);
       updateQualityBadge(qualities[0].label, 0);
-      startAbrMonitor();
+      startPlaybackMonitor();
     }
 
     function playHls(url) {

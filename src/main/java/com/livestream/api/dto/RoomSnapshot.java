@@ -27,15 +27,18 @@ public class RoomSnapshot {
     @JsonProperty
     private String ingestWarning;
 
+    @JsonProperty
+    private boolean encodeDegraded;
+
     public RoomSnapshot() {
     }
 
     public RoomSnapshot(int viewers, int likes, ActiveCoupon coupon) {
-        this(viewers, likes, coupon, null, false, 0, null);
+        this(viewers, likes, coupon, null, false, 0, null, false);
     }
 
     public RoomSnapshot(int viewers, int likes, ActiveCoupon coupon, String streamStatus) {
-        this(viewers, likes, coupon, streamStatus, false, 0, null);
+        this(viewers, likes, coupon, streamStatus, false, 0, null, false);
     }
 
     public RoomSnapshot(
@@ -46,6 +49,18 @@ public class RoomSnapshot {
             boolean ingestUnstable,
             long ingestBitrateKbps,
             String ingestWarning) {
+        this(viewers, likes, coupon, streamStatus, ingestUnstable, ingestBitrateKbps, ingestWarning, false);
+    }
+
+    public RoomSnapshot(
+            int viewers,
+            int likes,
+            ActiveCoupon coupon,
+            String streamStatus,
+            boolean ingestUnstable,
+            long ingestBitrateKbps,
+            String ingestWarning,
+            boolean encodeDegraded) {
         this.viewers = viewers;
         this.likes = likes;
         this.coupon = coupon;
@@ -53,6 +68,7 @@ public class RoomSnapshot {
         this.ingestUnstable = ingestUnstable;
         this.ingestBitrateKbps = ingestBitrateKbps;
         this.ingestWarning = ingestWarning;
+        this.encodeDegraded = encodeDegraded;
     }
 
     public int getViewers() {
@@ -81,5 +97,9 @@ public class RoomSnapshot {
 
     public String getIngestWarning() {
         return ingestWarning;
+    }
+
+    public boolean isEncodeDegraded() {
+        return encodeDegraded;
     }
 }
