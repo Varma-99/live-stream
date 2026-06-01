@@ -7,6 +7,8 @@ import com.livestream.api.IllegalStateExceptionMapper;
 import com.livestream.api.StreamResource;
 import com.livestream.health.AppHealthCheck;
 import com.livestream.service.DevDataSeeder;
+import com.livestream.mediamtx.IngestHealthService;
+import com.livestream.realtime.BroadcasterControlService;
 import com.livestream.service.VideoService;
 import com.livestream.web.HlsAssetServlet;
 import com.livestream.model.LiveStream;
@@ -55,10 +57,15 @@ public class LiveStreamApplication extends Application<LiveStreamConfiguration> 
     @Override
     public void run(LiveStreamConfiguration configuration, Environment environment) throws Exception {
         Injector injector = Guice.createInjector(
-                new LiveStreamModule(configuration, hibernateBundle.getSessionFactory()));
+                new LiveStreamModule(
+                        configuration,
+                        hibernateBundle.getSessionFactory(),
+                        environment.getObjectMapper()));
 
         VideoService videoService = injector.getInstance(VideoService.class);
         environment.lifecycle().manage(videoService);
+        environment.lifecycle().manage(injector.getInstance(IngestHealthService.class));
+        environment.lifecycle().manage(injector.getInstance(BroadcasterControlService.class));
         HlsAssetServlet.register(environment, configuration.getHlsOutputDir());
 
         environment.healthChecks().register("app", new AppHealthCheck());
@@ -71,10 +78,20 @@ public class LiveStreamApplication extends Application<LiveStreamConfiguration> 
             LOGGER.info("Dev mode: using embedded H2 database (config-dev.yml)");
         }
 
-        LOGGER.info("live-stream started (Phase 3 — HLS + FFmpeg)");
-        LOGGER.info("REST: GET /streams, POST /streams/start, POST /streams/{id}/stop");
+        LOGGER.info("live-stream started — delivery={}", configuration.getStreamDelivery());
+        LOGGER.info("REST: streams, coupon, join/heartbeat/room (viewer count)");
         LOGGER.info("Web UI: http://localhost:8080/ui/");
-        LOGGER.info("HLS example: http://localhost:8080/hls/1/index.m3u8");
+        if (configuration.isMediamtxDelivery()) {
+            LOGGER.info("MediaMTX: run ./scripts/start-mediamtx.sh (RTMP :1935, WebRTC :8889, API :9997)");
+            if (configuration.isAbrEnabled()) {
+                LOGGER.info("ABR: 3 RTMP/WHEP rungs (high/mid/low) — viewer switches URL from WebRTC stats");
+            }
+            if (configuration.isMediamtxApiEnabled()) {
+                LOGGER.info("Ingest telemetry: MediaMTX API {}", configuration.getMediamtxApiBase());
+            }
+        } else {
+            LOGGER.info("HLS example: http://localhost:8080/hls/1/index.m3u8");
+        }
         LOGGER.info("HLS output dir: {}", configuration.getHlsOutputDir());
         LOGGER.info("FFmpeg path: {} (videoInput={})", configuration.getFfmpegPath(), configuration.getVideoInput());
         if ("camera".equalsIgnoreCase(configuration.getVideoInput())) {

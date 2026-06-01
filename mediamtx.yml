@@ -1,0 +1,27 @@
+# MediaMTX — minimal config for live-stream (RTMP ingest + WebRTC playback only)
+# Run: ./scripts/start-mediamtx.sh
+
+logLevel: info
+
+api: yes
+apiAddress: :9997
+
+# Only what we use (disables RTSP :8554/:8000, HLS :8888, SRT :8890)
+rtsp: no
+srt: no
+hls: no
+hlsAddress: ""
+
+rtmp: yes
+rtmpAddress: :1935
+
+webrtc: yes
+webrtcAddress: :8889
+
+# Local dev: host candidates only — skip public STUN round-trips (~100–500ms saved on connect)
+webrtcAdditionalHosts: [127.0.0.1, localhost]
+webrtcSTUNGatherTimeout: 1s
+webrtcTrackGatherTimeout: 1s
+
+paths:
+  all_others:

@@ -2,126 +2,427 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>View — Live Stream</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Watch — LiveMart</title>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.7"></script>
   <link rel="stylesheet" href="/ui/common.css">
 </head>
 <body>
-  <main class="card" style="max-width:900px">
-    <p class="back"><a href="/ui/">← Home</a></p>
-    <h1>View (watch)</h1>
-    <p class="muted">Pick a live stream, then play (~3s delay with HLS-3sec tuning).</p>
+  <header class="topbar">
+    <a class="logo" href="/ui/">LiveMart</a>
+    <span class="live-dot">● LIVE</span>
+  </header>
 
-    <label for="streamPick">Live streams</label>
-    <select id="streamPick">
-      <option value="">— loading —</option>
-    </select>
-    <div class="actions">
-      <button class="btn primary" type="button" onclick="loadStream()">Play</button>
-      <button class="btn" type="button" onclick="refreshStreams()">Refresh list</button>
+  <div class="page">
+    <div class="card">
+      <label for="streamPick">Live show</label>
+      <select id="streamPick"><option>Loading…</option></select>
+      <div class="actions">
+        <button class="btn primary" id="playBtn" type="button">Watch</button>
+        <button class="btn" id="refreshBtn" type="button">Refresh list</button>
+      </div>
+      <p id="playStatus" class="muted"></p>
+      <p class="quality-badge" id="qualityBadge" style="display:none">Quality: —</p>
+
+      <div class="video-stage">
+        <video id="video" controls autoplay muted playsinline></video>
+        <div class="pause-overlay" id="pauseOverlay">Stream paused</div>
+      </div>
+
+      <p class="stat" id="viewerStat">👀 — watching</p>
+
+      <div class="coupon-banner" id="couponBanner">
+        <strong id="couponTitle">Deal</strong>
+        <p class="muted" style="margin:0.35rem 0 0">
+          Use code <strong id="couponCodeLabel"></strong> —
+          ends in <span id="couponTimer">0:00</span>
+        </p>
+        <button class="btn primary" type="button" id="copyBtn" style="margin-top:0.5rem">Copy code</button>
+      </div>
     </div>
+  </div>
 
-    <video id="video" controls autoplay muted playsinline></video>
-    <p id="status" class="muted">Ready.</p>
-    <pre id="detail" style="font-size:0.8rem;color:#666;max-height:120px;overflow:auto"></pre>
-  </main>
+  <script src="/ui/presence.js?v=3"></script>
   <script>
     let hlsInstance = null;
+    let whepPc = null;
+    let qualities = [];
+    let qualityIndex = 0;
+    let playbackTimer = null;
+    let statsSample = null;
+    let streamCatalog = [];
+    let presenceId = null;
+    let stopHeartbeat = null;
+    let couponTimer = null;
+    let activeStreamId = null;
+    let activeCode = '';
+    let reconnecting = false;
+    let lastReconnectAt = 0;
+    let zeroKbpsStreak = 0;
+    let lastVideoBytes = 0;
+    let lastVideoBytesGrowthAt = 0;
+    let lastEncodeDegraded = null;
 
-    function getStreamId() {
-      const params = new URLSearchParams(location.search);
-      if (params.get('stream')) return params.get('stream');
-      const sel = document.getElementById('streamPick');
-      return sel.value;
-    }
+    const PLAYBACK_TICK_MS = 2500;
+    const ZERO_KBPS_STREAK_LIMIT = 2;
+    const NO_BYTE_GROWTH_MS = 5000;
+    const RECONNECT_COOLDOWN_MS = 2500;
 
-    function playlistUrl(id) {
-      return '/hls/' + id + '/index.m3u8';
+    const video = document.getElementById('video');
+    const viewerStat = document.getElementById('viewerStat');
+    const playStatus = document.getElementById('playStatus');
+    const couponBanner = document.getElementById('couponBanner');
+    const pauseOverlay = document.getElementById('pauseOverlay');
+
+    function selectedStream() {
+      const id = document.getElementById('streamPick').value;
+      return streamCatalog.find(s => String(s.id) === String(id));
     }
 
     async function refreshStreams() {
       const sel = document.getElementById('streamPick');
       try {
-        const r = await fetch('/streams');
-        const list = await r.json();
+        streamCatalog = await fetch('/streams').then(r => r.json());
         sel.innerHTML = '';
-        if (list.length === 0) {
-          sel.innerHTML = '<option value="">No live streams — start one on Stream page</option>';
+        if (streamCatalog.length === 0) {
+          sel.innerHTML = '<option value="">No live show — start one on Streamer page</option>';
           return;
         }
-        list.forEach(s => {
-          const opt = document.createElement('option');
-          opt.value = s.id;
-          opt.textContent = '#' + s.id + ' — ' + s.title + ' (' + s.broadcasterName + ')';
-          sel.appendChild(opt);
+        streamCatalog.forEach(s => {
+          const o = document.createElement('option');
+          o.value = s.id;
+          o.textContent = '#' + s.id + ' — ' + s.title + (s.status === 'PAUSED' ? ' (paused)' : '');
+          sel.appendChild(o);
         });
-        const params = new URLSearchParams(location.search);
-        if (params.get('stream')) sel.value = params.get('stream');
+        const q = new URLSearchParams(location.search).get('stream');
+        if (q) sel.value = q;
       } catch (e) {
-        sel.innerHTML = '<option value="">Server not reachable</option>';
+        sel.innerHTML = '<option value="">Server offline?</option>';
       }
     }
 
-    function setStatus(text) {
-      document.getElementById('status').textContent = text;
+    function stopPresence() {
+      if (stopHeartbeat) {
+        stopHeartbeat();
+        stopHeartbeat = null;
+      }
+      if (activeStreamId && presenceId) {
+        Presence.leave(activeStreamId, presenceId);
+      }
+      presenceId = null;
+      activeStreamId = null;
+      if (couponTimer) clearInterval(couponTimer);
+      couponBanner.classList.remove('show');
     }
 
-    function loadStream() {
-      const id = getStreamId();
-      if (!id) {
-        setStatus('Select a live stream first (or start one on Stream page).');
+    function setPaused(paused) {
+      if (paused) {
+        pauseOverlay.classList.add('show');
+        video.muted = true;
+      } else {
+        pauseOverlay.classList.remove('show');
+        video.muted = false;
+      }
+    }
+
+    function applyRoom(room) {
+      viewerStat.textContent = '👀 ' + room.viewers + ' watching';
+      if (room.streamStatus === 'ENDED' && whepPc) {
+        stopPlayers();
+        playStatus.textContent = 'Stream ended.';
         return;
       }
-      const url = playlistUrl(id);
-      const video = document.getElementById('video');
-      document.getElementById('detail').textContent = '';
-
-      if (hlsInstance) {
-        hlsInstance.destroy();
-        hlsInstance = null;
+      setPaused(room.streamStatus === 'PAUSED');
+      if (room.coupon && room.coupon.expiresAt > Date.now()) {
+        showCoupon(room.coupon);
       }
-
-      setStatus('Loading ' + url + ' …');
-
-      if (Hls.isSupported()) {
-        hlsInstance = new Hls({
-          liveSyncDuration: 3,
-          liveMaxLatencyDuration: 10,
-          maxBufferLength: 30,
-          maxMaxBufferLength: 60,
-          liveDurationInfinity: true,
-          lowLatencyMode: false,
-          nudgeMaxRetry: 5
-        });
-        hlsInstance.loadSource(url);
-        hlsInstance.attachMedia(video);
-        hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
-          setStatus('Playing stream #' + id);
-          video.play().catch(() => {});
-        });
-        hlsInstance.on(Hls.Events.ERROR, (_, data) => {
-          document.getElementById('detail').textContent = JSON.stringify(data, null, 2);
-          if (data.details === 'bufferStalledError') {
-            setStatus('Buffer stalled — catching up…');
-            hlsInstance.recoverMediaError();
-            return;
+      if (whepPc && typeof room.encodeDegraded === 'boolean') {
+        if (lastEncodeDegraded !== null && lastEncodeDegraded !== room.encodeDegraded) {
+          if (room.encodeDegraded) {
+            const lower = Math.min(qualityIndex + 1, qualities.length - 1);
+            reconnectToQuality(lower, 'Streamer degraded video');
+          } else {
+            reconnectToQuality(0, 'Streamer restored quality');
           }
-          if (!data.fatal) return;
-          setStatus('HLS error: ' + data.type + (data.details ? ' — ' + data.details : ''));
-          if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hlsInstance.recoverMediaError();
-          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hlsInstance.startLoad();
-        });
-      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        video.src = url;
-        setStatus('Playing (Safari)');
-      } else {
-        setStatus('HLS not supported in this browser');
+        }
+        lastEncodeDegraded = room.encodeDegraded;
       }
     }
 
-    refreshStreams();
-    const params = new URLSearchParams(location.search);
-    if (params.get('stream')) setTimeout(loadStream, 500);
+    function showCoupon(c) {
+      activeCode = c.code;
+      document.getElementById('couponTitle').textContent = c.percentOff + '% off';
+      document.getElementById('couponCodeLabel').textContent = c.code;
+      couponBanner.classList.add('show');
+      if (couponTimer) clearInterval(couponTimer);
+      const timerEl = document.getElementById('couponTimer');
+      couponTimer = setInterval(() => {
+        const left = Math.max(0, c.expiresAt - Date.now());
+        const sec = Math.ceil(left / 1000);
+        timerEl.textContent = Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
+        if (left <= 0) {
+          couponBanner.classList.remove('show');
+          clearInterval(couponTimer);
+        }
+      }, 300);
+    }
+
+    function startPresence(streamId) {
+      stopPresence();
+      activeStreamId = streamId;
+      Presence.join(streamId)
+        .then((data) => {
+          presenceId = data.presenceId;
+          applyRoom(data.room);
+          stopHeartbeat = Presence.startHeartbeat(streamId, presenceId, applyRoom);
+        })
+        .catch((e) => {
+          viewerStat.textContent = '👀 count unavailable';
+          console.warn(e);
+        });
+    }
+
+    function stopPlayers() {
+      if (playbackTimer) { clearInterval(playbackTimer); playbackTimer = null; }
+      statsSample = null;
+      zeroKbpsStreak = 0;
+      lastEncodeDegraded = null;
+      reconnecting = false;
+      if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
+      if (whepPc) { whepPc.close(); whepPc = null; }
+      video.srcObject = null;
+      document.getElementById('qualityBadge').style.display = 'none';
+      setPaused(false);
+    }
+
+    function isPlaybackPaused() {
+      return pauseOverlay.classList.contains('show');
+    }
+
+    function canReconnect() {
+      return whepPc && qualities.length > 0 && !reconnecting && !isPlaybackPaused();
+    }
+
+    async function reconnectToQuality(index, reason) {
+      if (!canReconnect()) return;
+      const now = Date.now();
+      if (now - lastReconnectAt < RECONNECT_COOLDOWN_MS) return;
+      const target = Math.max(0, Math.min(index, qualities.length - 1));
+      const q = qualities[target];
+      if (!q) return;
+
+      reconnecting = true;
+      lastReconnectAt = now;
+      playStatus.textContent = reason + ' — reconnecting…';
+      try {
+        await connectWhep(q.webrtcWhepUrl);
+        qualityIndex = target;
+        zeroKbpsStreak = 0;
+        lastVideoBytesGrowthAt = Date.now();
+        updateQualityBadge(q.label, 0);
+        playStatus.textContent = 'Playing (' + q.label + ')';
+      } catch (e) {
+        playStatus.textContent = 'Reconnect failed — retrying…';
+        console.warn('reconnect failed', e);
+        if (target < qualities.length - 1) {
+          reconnecting = false;
+          await reconnectToQuality(target + 1, 'Trying lower quality');
+        } else {
+          playStatus.textContent = String(e);
+        }
+      } finally {
+        reconnecting = false;
+      }
+    }
+
+    async function handlePlaybackStall(reason) {
+      if (!canReconnect()) return;
+      const stepDown = qualityIndex < qualities.length - 1;
+      const target = stepDown ? qualityIndex + 1 : qualityIndex;
+      await reconnectToQuality(target, reason);
+    }
+
+    function updateQualityBadge(label, downloadKbps) {
+      const el = document.getElementById('qualityBadge');
+      el.style.display = 'inline-block';
+      const dl = downloadKbps > 0 ? ' · ↓ ~' + downloadKbps + ' kbps' : '';
+      el.textContent = 'Quality: ' + label + dl;
+    }
+
+    function attachPcHealthHandlers(pc) {
+      pc.onconnectionstatechange = () => {
+        const state = pc.connectionState;
+        if (state === 'failed' || state === 'disconnected') {
+          handlePlaybackStall('Connection ' + state);
+        }
+      };
+      pc.oniceconnectionstatechange = () => {
+        const state = pc.iceConnectionState;
+        if (state === 'failed' || state === 'disconnected') {
+          handlePlaybackStall('ICE ' + state);
+        }
+      };
+    }
+
+    async function connectWhep(url) {
+      if (whepPc) {
+        whepPc.onconnectionstatechange = null;
+        whepPc.oniceconnectionstatechange = null;
+        whepPc.close();
+        whepPc = null;
+        video.srcObject = null;
+      }
+      statsSample = null;
+      const pc = new RTCPeerConnection({ iceServers: [] });
+      whepPc = pc;
+      attachPcHealthHandlers(pc);
+      pc.addTransceiver('video', { direction: 'recvonly' });
+      pc.addTransceiver('audio', { direction: 'recvonly' });
+      pc.ontrack = (ev) => {
+        video.srcObject = ev.streams[0];
+        video.play().catch(() => {});
+        lastVideoBytesGrowthAt = Date.now();
+      };
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/sdp' },
+        body: offer.sdp,
+      });
+      if (!resp.ok) throw new Error('Video failed — run ./scripts/start-mediamtx.sh');
+      await pc.setRemoteDescription({ type: 'answer', sdp: await resp.text() });
+      lastVideoBytesGrowthAt = Date.now();
+    }
+
+    async function readVideoStats(pc) {
+      const reports = await pc.getStats();
+      let bytes = 0;
+      reports.forEach((r) => {
+        if (r.type === 'inbound-rtp' && r.kind === 'video') {
+          bytes += r.bytesReceived || 0;
+        }
+      });
+      const now = Date.now();
+      if (!statsSample) {
+        statsSample = { bytes, at: now };
+        return { bytes, kbps: 0 };
+      }
+      const deltaBytes = Math.max(0, bytes - statsSample.bytes);
+      const deltaMs = Math.max(1, now - statsSample.at);
+      statsSample = { bytes, at: now };
+      return { bytes, kbps: Math.round((deltaBytes * 8) / deltaMs) };
+    }
+
+    async function runPlaybackTick() {
+      if (!whepPc || reconnecting || isPlaybackPaused()) return;
+
+      const { bytes, kbps } = await readVideoStats(whepPc);
+      const current = qualities[qualityIndex];
+      if (!current) return;
+
+      updateQualityBadge(current.label, kbps);
+
+      if (bytes > lastVideoBytes) {
+        lastVideoBytes = bytes;
+        lastVideoBytesGrowthAt = Date.now();
+      }
+
+      const noGrowth = Date.now() - lastVideoBytesGrowthAt > NO_BYTE_GROWTH_MS;
+
+      if (kbps <= 0) {
+        zeroKbpsStreak += 1;
+        if (noGrowth || zeroKbpsStreak >= ZERO_KBPS_STREAK_LIMIT) {
+          await handlePlaybackStall(noGrowth ? 'Video stalled' : 'No incoming data');
+        }
+        return;
+      }
+
+      zeroKbpsStreak = 0;
+
+      if (qualities.length <= 1) return;
+
+      if (kbps < current.minDownloadKbps * 0.85 && qualityIndex < qualities.length - 1) {
+        await reconnectToQuality(qualityIndex + 1, 'Low download — stepping down');
+        return;
+      }
+      if (qualityIndex > 0) {
+        const upper = qualities[qualityIndex - 1];
+        if (kbps > upper.minDownloadKbps * 1.25) {
+          await reconnectToQuality(qualityIndex - 1, 'Stepping up');
+        }
+      }
+    }
+
+    function startPlaybackMonitor() {
+      if (playbackTimer) clearInterval(playbackTimer);
+      lastVideoBytes = 0;
+      lastVideoBytesGrowthAt = Date.now();
+      zeroKbpsStreak = 0;
+      playbackTimer = setInterval(() => {
+        runPlaybackTick().catch((e) => console.warn('playback tick', e));
+      }, PLAYBACK_TICK_MS);
+    }
+
+    async function playWebrtc(stream) {
+      stopPlayers();
+      qualities = (stream.qualities && stream.qualities.length > 0)
+        ? stream.qualities
+        : [{ id: 'high', label: '720p', webrtcWhepUrl: stream.webrtcWhepUrl, minDownloadKbps: 800 }];
+      qualityIndex = 0;
+      lastEncodeDegraded = !!stream.encodeDegraded;
+      await connectWhep(qualities[0].webrtcWhepUrl);
+      updateQualityBadge(qualities[0].label, 0);
+      startPlaybackMonitor();
+    }
+
+    function playHls(url) {
+      stopPlayers();
+      if (Hls.isSupported()) {
+        hlsInstance = new Hls({ liveSyncDuration: 3 });
+        hlsInstance.loadSource(url);
+        hlsInstance.attachMedia(video);
+        hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
+      } else {
+        video.src = url;
+      }
+    }
+
+    async function watch() {
+      const stream = selectedStream();
+      if (!stream) {
+        playStatus.textContent = 'Pick a live show.';
+        return;
+      }
+      playStatus.textContent = 'Connecting…';
+      try {
+        if (stream.delivery === 'webrtc' && (stream.webrtcWhepUrl || (stream.qualities && stream.qualities.length))) {
+          await playWebrtc(stream);
+        } else if (stream.playbackUrl) {
+          playHls(stream.playbackUrl);
+        } else {
+          playStatus.textContent = 'No playback URL.';
+          return;
+        }
+        playStatus.textContent = 'Playing';
+        startPresence(stream.id);
+        setPaused(stream.status === 'PAUSED');
+        history.replaceState(null, '', '?stream=' + stream.id);
+      } catch (e) {
+        playStatus.textContent = String(e);
+      }
+    }
+
+    document.getElementById('copyBtn').onclick = () => {
+      if (activeCode) navigator.clipboard.writeText(activeCode).catch(() => {});
+    };
+    document.getElementById('playBtn').onclick = watch;
+    document.getElementById('refreshBtn').onclick = refreshStreams;
+    window.addEventListener('beforeunload', stopPresence);
+
+    refreshStreams().then(() => {
+      if (new URLSearchParams(location.search).get('stream')) setTimeout(watch, 400);
+    });
   </script>
 </body>
 </html>

@@ -2,76 +2,206 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Broadcast — Live Stream</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Go live — LiveMart</title>
   <link rel="stylesheet" href="/ui/common.css">
 </head>
 <body>
-  <main class="card">
-    <p class="back"><a href="/ui/">← Home</a></p>
-    <h1>Stream (broadcast)</h1>
-    <p class="muted">Starts your laptop camera via the server (FFmpeg). One live stream at a time on this device.</p>
+  <header class="topbar">
+    <a class="logo" href="/ui/">LiveMart</a>
+    <span class="live-dot" id="liveDot" style="display:none">● LIVE</span>
+  </header>
 
-    <label for="title">Stream title</label>
-    <input id="title" type="text" placeholder="My live stream" value="My live stream">
+  <div class="page">
+    <div class="card">
+      <h1>Streamer</h1>
+      <p class="muted">Video is captured by FFmpeg on this computer (not this browser). Closing this tab ends the stream after ~15 seconds unless you click <strong>End show</strong>.</p>
 
-    <div class="actions" style="margin-top:1rem">
-      <button class="btn primary" id="startBtn" type="button">Start stream</button>
-      <button class="btn danger" id="stopBtn" type="button" disabled>Stop stream</button>
+      <label for="title">Show title</label>
+      <input id="title" type="text" value="My live sale">
+
+      <div class="actions">
+        <button class="btn primary" id="startBtn" type="button">Start show</button>
+        <button class="btn" id="pauseBtn" type="button" disabled>Pause</button>
+        <button class="btn" id="resumeBtn" type="button" disabled style="display:none">Resume</button>
+        <button class="btn danger" id="stopBtn" type="button" disabled>End show</button>
+      </div>
+      <div id="message"></div>
+
+      <p class="stat" id="viewerStat" style="display:none">👀 0 watching</p>
+      <p class="ingest-warn" id="ingestWarn" style="display:none" role="alert"></p>
+      <div class="actions" id="demoPanel" style="display:none">
+        <button class="btn" type="button" id="degradeBtn" title="Restart FFmpeg at 100k / 5fps on all ABR paths">Degrade stream (demo)</button>
+        <button class="btn primary" type="button" id="restoreBtn" style="display:none" title="Restart FFmpeg at normal ABR quality">Restore quality</button>
+        <button class="btn" type="button" id="ingestDemoBtn" title="Dev only: fake low upload for streamer banner">Simulate upload warning (demo)</button>
+      </div>
+      <p class="muted" id="degradeHint" style="display:none;margin-top:0.5rem">Degrade sends real choppy video to viewers — watch the viewer tab quality line drop.</p>
+      <p class="links" id="watchLinks" style="display:none">
+        Viewers open: <a id="watchLink" href="#" target="_blank">watch link</a>
+      </p>
     </div>
 
-    <div id="message"></div>
-    <div id="liveInfo" class="note" style="display:none;margin-top:1rem"></div>
-  </main>
+    <div class="card coupon-box" id="couponPanel" style="display:none">
+      <h2>Drop coupon for viewers</h2>
+      <div class="row">
+        <div>
+          <label for="percentOff">Discount %</label>
+          <select id="percentOff">
+            <option value="10">10%</option>
+            <option value="15">15%</option>
+            <option value="20" selected>20%</option>
+            <option value="25">25%</option>
+            <option value="30">30%</option>
+          </select>
+        </div>
+        <div>
+          <label for="durationSec">Show for</label>
+          <select id="durationSec">
+            <option value="30">30 seconds</option>
+            <option value="60" selected>1 minute</option>
+            <option value="120">2 minutes</option>
+            <option value="300">5 minutes</option>
+          </select>
+        </div>
+        <div>
+          <label for="couponCode">Coupon code</label>
+          <input id="couponCode" type="text" value="LIVE20" maxlength="32">
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn primary" type="button" id="dropCouponBtn">Send coupon to all viewers</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/ui/presence.js?v=3"></script>
   <script>
-    const API = '';
     let currentStreamId = null;
+    let streamStatus = null;
+    let stopPoll = null;
+    let stopBroadcasterHeartbeat = null;
+    let endingIntentionally = false;
+
+    const msgEl = document.getElementById('message');
+
+    /** Works even if the browser cached an old presence.js without broadcaster heartbeat. */
+    function startBroadcasterHeartbeatSafe(streamId) {
+      if (window.Presence && typeof Presence.startBroadcasterHeartbeat === 'function') {
+        return Presence.startBroadcasterHeartbeat(streamId);
+      }
+      const tick = () => {
+        fetch('/streams/' + streamId + '/broadcaster-heartbeat', { method: 'POST' }).catch(() => {});
+      };
+      tick();
+      const id = setInterval(tick, 5000);
+      return () => clearInterval(id);
+    }
 
     function showMessage(text, ok) {
-      const el = document.getElementById('message');
-      el.textContent = text;
-      el.className = ok ? 'ok' : 'err';
+      msgEl.textContent = text;
+      msgEl.id = 'message';
+      msgEl.className = ok ? 'ok' : 'err';
     }
 
-    function setLiveInfo(stream) {
-      const el = document.getElementById('liveInfo');
-      if (!stream) {
-        el.style.display = 'none';
+    function applyIngestWarning(room) {
+      const warn = document.getElementById('ingestWarn');
+      if (room.ingestUnstable) {
+        const msg = room.ingestWarning || 'Network unstable — check your upload';
+        warn.textContent = '⚠ ' + msg + (room.ingestBitrateKbps > 0 ? ' (~' + room.ingestBitrateKbps + ' kbps)' : '');
+        warn.style.display = 'block';
+      } else {
+        warn.style.display = 'none';
+      }
+    }
+
+    function updateDegradeButtons(degraded) {
+      document.getElementById('degradeBtn').style.display = degraded ? 'none' : 'inline-block';
+      document.getElementById('restoreBtn').style.display = degraded ? 'inline-block' : 'none';
+      document.getElementById('degradeHint').style.display = 'block';
+    }
+
+    function handleRoomUpdate(room) {
+      if (room.streamStatus === 'ENDED') {
+        setLive(false);
+        showMessage('Stream ended — control panel was closed or connection lost.', false);
         return;
       }
-      el.style.display = 'block';
-      el.innerHTML =
-        '<strong>Live now</strong><br>' +
-        'Stream id: <code>' + stream.id + '</code><br>' +
-        'Title: ' + escapeHtml(stream.title) + '<br>' +
-        '<a href="/ui/viewer.html?stream=' + stream.id + '">Open viewer →</a>';
+      document.getElementById('viewerStat').textContent = '👀 ' + room.viewers + ' watching';
+      if (room.streamStatus) updatePauseButtons(room.streamStatus);
+      applyIngestWarning(room);
+      if (typeof room.encodeDegraded === 'boolean') updateDegradeButtons(room.encodeDegraded);
     }
 
-    function escapeHtml(s) {
-      const d = document.createElement('div');
-      d.textContent = s;
-      return d.innerHTML;
+    function updatePauseButtons(status) {
+      streamStatus = status;
+      const paused = status === 'PAUSED';
+      document.getElementById('pauseBtn').disabled = !currentStreamId || paused;
+      document.getElementById('pauseBtn').style.display = paused ? 'none' : 'inline-block';
+      document.getElementById('resumeBtn').disabled = !currentStreamId || !paused;
+      document.getElementById('resumeBtn').style.display = paused ? 'inline-block' : 'none';
+      const dot = document.getElementById('liveDot');
+      dot.textContent = paused ? '● PAUSED' : '● LIVE';
+      dot.style.color = paused ? '#f57c00' : '#c62828';
+    }
+
+    function setLive(on, streamId, status) {
+      document.getElementById('startBtn').disabled = on;
+      document.getElementById('stopBtn').disabled = !on;
+      document.getElementById('liveDot').style.display = on ? 'inline' : 'none';
+      document.getElementById('viewerStat').style.display = on ? 'inline-block' : 'none';
+      document.getElementById('watchLinks').style.display = on ? 'block' : 'none';
+      document.getElementById('couponPanel').style.display = on ? 'block' : 'none';
+      document.getElementById('demoPanel').style.display = on ? 'flex' : 'none';
+      document.getElementById('degradeHint').style.display = on ? 'block' : 'none';
+      if (on) updateDegradeButtons(false);
+
+      if (stopPoll) {
+        stopPoll();
+        stopPoll = null;
+      }
+      if (stopBroadcasterHeartbeat) {
+        stopBroadcasterHeartbeat();
+        stopBroadcasterHeartbeat = null;
+      }
+
+      if (on && streamId) {
+        currentStreamId = streamId;
+        updatePauseButtons(status || 'LIVE');
+        const link = location.origin + '/ui/viewer.html?stream=' + streamId;
+        const a = document.getElementById('watchLink');
+        a.href = link;
+        a.textContent = link;
+        stopBroadcasterHeartbeat = startBroadcasterHeartbeatSafe(streamId);
+        stopPoll = Presence.startBroadcasterPoll(streamId, handleRoomUpdate);
+      } else {
+        currentStreamId = null;
+        streamStatus = null;
+        endingIntentionally = false;
+        document.getElementById('viewerStat').textContent = '👀 0 watching';
+        document.getElementById('ingestWarn').style.display = 'none';
+        updatePauseButtons('LIVE');
+      }
     }
 
     async function refreshLive() {
       try {
-        const r = await fetch(API + '/streams');
-        const list = await r.json();
+        const list = await fetch('/streams').then(r => r.json());
         const mine = list.find(s => s.broadcasterId === 1);
         if (mine) {
-          currentStreamId = mine.id;
-          document.getElementById('stopBtn').disabled = false;
-          document.getElementById('startBtn').disabled = true;
-          setLiveInfo(mine);
-        } else {
-          currentStreamId = null;
-          document.getElementById('stopBtn').disabled = true;
-          document.getElementById('startBtn').disabled = false;
-          setLiveInfo(null);
-        }
+          setLive(true, mine.id, mine.status);
+          updateDegradeButtons(!!mine.encodeDegraded);
+        } else setLive(false);
       } catch (e) {
-        showMessage('Cannot reach server. Is LiveStreamApplication running?', false);
+        showMessage('Server not running?', false);
       }
     }
+
+    window.addEventListener('beforeunload', (e) => {
+      if (currentStreamId && !endingIntentionally) {
+        e.preventDefault();
+        e.returnValue = 'Your stream is still live. FFmpeg keeps running until you end the show or this tab stops heartbeating (~15s).';
+      }
+    });
 
     document.getElementById('startBtn').onclick = async () => {
       const title = document.getElementById('title').value.trim();
@@ -79,23 +209,51 @@
         showMessage('Enter a title', false);
         return;
       }
-      showMessage('Starting…', true);
       try {
-        const r = await fetch(API + '/streams/start', {
+        const r = await fetch('/streams/start', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ broadcasterId: 1, title })
+          body: JSON.stringify({ broadcasterId: 1, title }),
         });
         const data = await r.json();
         if (!r.ok) {
-          showMessage(data.error || 'Start failed', false);
+          showMessage(data.error || 'Could not start', false);
           return;
         }
-        currentStreamId = data.id;
-        document.getElementById('stopBtn').disabled = false;
-        document.getElementById('startBtn').disabled = true;
-        showMessage('Stream started. Wait ~6s, then open View to watch.', true);
-        setLiveInfo(data);
+        setLive(true, data.id, data.status);
+        showMessage('Live! Open the watch link in other tabs — each tab counts as a viewer.', true);
+      } catch (e) {
+        showMessage(String(e), false);
+      }
+    };
+
+    document.getElementById('pauseBtn').onclick = async () => {
+      if (!currentStreamId) return;
+      try {
+        const r = await fetch('/streams/' + currentStreamId + '/pause', { method: 'POST' });
+        const data = await r.json();
+        if (!r.ok) {
+          showMessage(data.error || 'Pause failed', false);
+          return;
+        }
+        updatePauseButtons('PAUSED');
+        showMessage('Paused — viewers see a black screen. FFmpeg still running.', true);
+      } catch (e) {
+        showMessage(String(e), false);
+      }
+    };
+
+    document.getElementById('resumeBtn').onclick = async () => {
+      if (!currentStreamId) return;
+      try {
+        const r = await fetch('/streams/' + currentStreamId + '/resume', { method: 'POST' });
+        const data = await r.json();
+        if (!r.ok) {
+          showMessage(data.error || 'Resume failed', false);
+          return;
+        }
+        updatePauseButtons('LIVE');
+        showMessage('Resumed — live video again for viewers.', true);
       } catch (e) {
         showMessage(String(e), false);
       }
@@ -103,19 +261,100 @@
 
     document.getElementById('stopBtn').onclick = async () => {
       if (!currentStreamId) return;
-      showMessage('Stopping…', true);
+      endingIntentionally = true;
       try {
-        const r = await fetch(API + '/streams/' + currentStreamId + '/stop', { method: 'POST' });
-        const data = await r.json();
+        const r = await fetch('/streams/' + currentStreamId + '/stop', { method: 'POST' });
         if (!r.ok) {
+          const data = await r.json();
           showMessage(data.error || 'Stop failed', false);
+          endingIntentionally = false;
           return;
         }
-        currentStreamId = null;
-        document.getElementById('stopBtn').disabled = true;
-        document.getElementById('startBtn').disabled = false;
-        showMessage('Stream stopped. Camera released.', true);
-        setLiveInfo(null);
+        setLive(false);
+        showMessage('Show ended.', true);
+      } catch (e) {
+        showMessage(String(e), false);
+        endingIntentionally = false;
+      }
+    };
+
+    document.getElementById('degradeBtn').onclick = async () => {
+      if (!currentStreamId) return;
+      try {
+        const r = await fetch('/streams/' + currentStreamId + '/degrade', { method: 'POST' });
+        const data = await r.json();
+        if (!r.ok) {
+          showMessage(data.error || 'Degrade failed', false);
+          return;
+        }
+        updateDegradeButtons(true);
+        showMessage('Stream degraded (100k / 5fps). Viewers should step down via ABR in a few seconds.', true);
+      } catch (e) {
+        showMessage(String(e), false);
+      }
+    };
+
+    document.getElementById('restoreBtn').onclick = async () => {
+      if (!currentStreamId) return;
+      try {
+        const r = await fetch('/streams/' + currentStreamId + '/restore-quality', { method: 'POST' });
+        const data = await r.json();
+        if (!r.ok) {
+          showMessage(data.error || 'Restore failed', false);
+          return;
+        }
+        updateDegradeButtons(false);
+        showMessage('Normal quality restored. Viewers can step back up if their download allows.', true);
+      } catch (e) {
+        showMessage(String(e), false);
+      }
+    };
+
+    document.getElementById('ingestDemoBtn').onclick = async () => {
+      if (!currentStreamId) return;
+      try {
+        const r = await fetch('/streams/' + currentStreamId + '/ingest-demo', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ durationSec: 60 }),
+        });
+        if (r.status === 204) {
+          showMessage('Demo: unstable upload simulated for 60s — watch for the orange banner.', true);
+          const room = await fetch('/streams/' + currentStreamId + '/room').then(res => res.json());
+          applyIngestWarning(room);
+        } else {
+          const data = await r.json();
+          showMessage(data.error || 'Demo failed', false);
+        }
+      } catch (e) {
+        showMessage(String(e), false);
+      }
+    };
+
+    document.getElementById('dropCouponBtn').onclick = async () => {
+      if (!currentStreamId) {
+        showMessage('Start a show first', false);
+        return;
+      }
+      const code = document.getElementById('couponCode').value.trim();
+      const percentOff = parseInt(document.getElementById('percentOff').value, 10);
+      const durationSec = parseInt(document.getElementById('durationSec').value, 10);
+      if (!/^[A-Za-z0-9_-]+$/.test(code)) {
+        showMessage('Code: letters, numbers, _ and - only', false);
+        return;
+      }
+      try {
+        const r = await fetch('/streams/' + currentStreamId + '/coupon', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code, percentOff, durationSec }),
+        });
+        if (r.status === 204) {
+          showMessage('Coupon sent — viewers will see it within 2 seconds.', true);
+        } else {
+          const data = await r.json();
+          showMessage(data.error || 'Coupon failed', false);
+        }
       } catch (e) {
         showMessage(String(e), false);
       }

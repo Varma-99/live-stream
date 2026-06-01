@@ -40,4 +40,13 @@ cameraDevice: "0:0"
 useTestVideo: false
 rtmpPort: 1935
 
-# HLS latency tuning (see branch HLS-3sec): 2s segments, GOP 30 frames, player ~3s behind live
+# Delivery: mediamtx = FFmpeg → RTMP → MediaMTX → WebRTC (low latency). hls = file-based HLS.
+streamDelivery: mediamtx
+mediamtxRtmpPublishBase: rtmp://127.0.0.1:1935
+mediamtxWebrtcBase: http://127.0.0.1:8889
+mediamtxApiBase: http://127.0.0.1:9997
+mediamtxApiEnabled: true
+abrEnabled: true
+
+# MediaMTX mode: ultrafast + zerolatency, 0.5s GOP, localhost WebRTC (see FfmpegCommandBuilder)
+# HLS mode only (streamDelivery: hls): 2s segments, GOP 30 frames
