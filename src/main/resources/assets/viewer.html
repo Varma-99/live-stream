@@ -64,8 +64,11 @@
     let lastEncodeDegraded = null;
     let lowKbpsStreak = 0;
     let videoFlowing = false;
+    let encodeSwitchInFlight = false;
 
     const PLAYBACK_TICK_MS = 3000;
+    const ENCODE_SWITCH_RETRY_MS = 1000;
+    const ENCODE_SWITCH_MAX_ATTEMPTS = 20;
     const ZERO_KBPS_STREAK_LIMIT = 5;
     const LOW_KBPS_STREAK_LIMIT = 4;
     const NO_BYTE_GROWTH_MS = 20000;
@@ -141,15 +144,13 @@
         showCoupon(room.coupon);
       }
       if (whepPc && typeof room.encodeDegraded === 'boolean') {
-        if (lastEncodeDegraded !== null && lastEncodeDegraded !== room.encodeDegraded) {
-          if (room.encodeDegraded) {
-            const lower = Math.min(qualityIndex + 1, qualities.length - 1);
-            reconnectToQuality(lower, 'Streamer degraded video');
-          } else {
-            reconnectToQuality(0, 'Streamer restored quality');
-          }
+        const desired = room.encodeDegraded;
+        if (lastEncodeDegraded !== desired && !encodeSwitchInFlight) {
+          const target = desired
+            ? Math.min(qualityIndex + 1, qualities.length - 1)
+            : 0;
+          reconnectForEncodeChange(target, desired);
         }
-        lastEncodeDegraded = room.encodeDegraded;
       }
     }
 
@@ -192,6 +193,7 @@
       zeroKbpsStreak = 0;
       videoFlowing = false;
       lastEncodeDegraded = null;
+      encodeSwitchInFlight = false;
       reconnecting = false;
       if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
       if (whepPc) { whepPc.close(); whepPc = null; }
@@ -208,8 +210,61 @@
       return whepPc && qualities.length > 0 && !reconnecting && !isPlaybackPaused();
     }
 
+    function isWhepNotReadyError(err) {
+      const status = err && err.httpStatus;
+      return status === 404 || status === 502 || status === 503;
+    }
+
+    function sleep(ms) {
+      return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    /** Broadcaster degrade/restore restarts FFmpeg — wait for RTMP paths before WHEP. */
+    async function reconnectForEncodeChange(targetIndex, degraded) {
+      if (!canReconnect() || encodeSwitchInFlight) return;
+      const q = qualities[targetIndex];
+      if (!q) return;
+
+      encodeSwitchInFlight = true;
+      reconnecting = true;
+      const label = degraded ? 'Streamer degraded' : 'Streamer restored quality';
+      playStatus.textContent = label + ' — reconnecting…';
+
+      try {
+        for (let attempt = 0; attempt < ENCODE_SWITCH_MAX_ATTEMPTS; attempt++) {
+          if (attempt > 0) {
+            playStatus.textContent = label + ' — waiting for live feed (' + attempt + ')…';
+            await sleep(ENCODE_SWITCH_RETRY_MS);
+          }
+          if (!canReconnect()) return;
+          try {
+            await connectWhep(q.webrtcWhepUrl);
+            qualityIndex = targetIndex;
+            zeroKbpsStreak = 0;
+            lowKbpsStreak = 0;
+            videoFlowing = false;
+            lastVideoBytesGrowthAt = Date.now();
+            lastReconnectAt = Date.now();
+            updateQualityBadge(q.label, 0);
+            playStatus.textContent = 'Playing (' + q.label + ')';
+            lastEncodeDegraded = degraded;
+            return;
+          } catch (e) {
+            if (!isWhepNotReadyError(e) || attempt === ENCODE_SWITCH_MAX_ATTEMPTS - 1) {
+              console.warn('encode switch reconnect failed', e);
+              playStatus.textContent = label + ' — still waiting; will retry on next heartbeat';
+              return;
+            }
+          }
+        }
+      } finally {
+        reconnecting = false;
+        encodeSwitchInFlight = false;
+      }
+    }
+
     async function reconnectToQuality(index, reason) {
-      if (!canReconnect()) return;
+      if (!canReconnect() || encodeSwitchInFlight) return;
       const now = Date.now();
       if (now - lastReconnectAt < RECONNECT_COOLDOWN_MS) return;
       const target = Math.max(0, Math.min(index, qualities.length - 1));
@@ -231,7 +286,7 @@
       } catch (e) {
         playStatus.textContent = 'Reconnect failed — retrying…';
         console.warn('reconnect failed', e);
-        if (target < qualities.length - 1) {
+        if (!isWhepNotReadyError(e) && target < qualities.length - 1) {
           reconnecting = false;
           await reconnectToQuality(target + 1, 'Trying lower quality');
         } else {
@@ -303,7 +358,15 @@
         headers: { 'Content-Type': 'application/sdp' },
         body: pc.localDescription.sdp,
       });
-      if (!resp.ok) throw new Error('Video failed — run ./scripts/start-mediamtx.sh');
+      if (!resp.ok) {
+        const err = new Error(
+          resp.status === 404
+            ? 'Stream not ready on MediaMTX (broadcaster may be restarting FFmpeg)'
+            : 'Video failed — run ./scripts/start-mediamtx.sh'
+        );
+        err.httpStatus = resp.status;
+        throw err;
+      }
       await pc.setRemoteDescription({ type: 'answer', sdp: await resp.text() });
       lastVideoBytesGrowthAt = Date.now();
     }
