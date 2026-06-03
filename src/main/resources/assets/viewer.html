@@ -62,11 +62,15 @@
     let lastVideoBytes = 0;
     let lastVideoBytesGrowthAt = 0;
     let lastEncodeDegraded = null;
+    let lowKbpsStreak = 0;
+    let videoFlowing = false;
 
-    const PLAYBACK_TICK_MS = 2500;
-    const ZERO_KBPS_STREAK_LIMIT = 2;
-    const NO_BYTE_GROWTH_MS = 5000;
-    const RECONNECT_COOLDOWN_MS = 2500;
+    const PLAYBACK_TICK_MS = 3000;
+    const ZERO_KBPS_STREAK_LIMIT = 5;
+    const LOW_KBPS_STREAK_LIMIT = 4;
+    const NO_BYTE_GROWTH_MS = 20000;
+    const RECONNECT_COOLDOWN_MS = 8000;
+    const ICE_GATHER_MS = 2500;
 
     const video = document.getElementById('video');
     const viewerStat = document.getElementById('viewerStat');
@@ -186,6 +190,7 @@
       if (playbackTimer) { clearInterval(playbackTimer); playbackTimer = null; }
       statsSample = null;
       zeroKbpsStreak = 0;
+      videoFlowing = false;
       lastEncodeDegraded = null;
       reconnecting = false;
       if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
@@ -218,6 +223,8 @@
         await connectWhep(q.webrtcWhepUrl);
         qualityIndex = target;
         zeroKbpsStreak = 0;
+        lowKbpsStreak = 0;
+        videoFlowing = false;
         lastVideoBytesGrowthAt = Date.now();
         updateQualityBadge(q.label, 0);
         playStatus.textContent = 'Playing (' + q.label + ')';
@@ -236,10 +243,12 @@
     }
 
     async function handlePlaybackStall(reason) {
-      if (!canReconnect()) return;
-      const stepDown = qualityIndex < qualities.length - 1;
-      const target = stepDown ? qualityIndex + 1 : qualityIndex;
-      await reconnectToQuality(target, reason);
+      if (!canReconnect() || videoFlowing) return;
+      if (qualityIndex >= qualities.length - 1) {
+        playStatus.textContent = 'No video yet — keep broadcaster live; same Wi‑Fi as ' + location.host;
+        return;
+      }
+      await reconnectToQuality(qualityIndex + 1, reason);
     }
 
     function updateQualityBadge(label, downloadKbps) {
@@ -249,22 +258,20 @@
       el.textContent = 'Quality: ' + label + dl;
     }
 
-    function attachPcHealthHandlers(pc) {
-      pc.onconnectionstatechange = () => {
-        const state = pc.connectionState;
-        if (state === 'failed' || state === 'disconnected') {
-          handlePlaybackStall('Connection ' + state);
-        }
-      };
-      pc.oniceconnectionstatechange = () => {
-        const state = pc.iceConnectionState;
-        if (state === 'failed' || state === 'disconnected') {
-          handlePlaybackStall('ICE ' + state);
-        }
-      };
+    /** Use same-origin /whep path from API (app proxies to MediaMTX on :8889). */
+    function resolveWhepUrl(url) {
+      if (!url) return url;
+      try {
+        const u = new URL(url, location.origin);
+        if (u.pathname.startsWith('/whep/')) return u.pathname;
+      } catch (e) {
+        if (String(url).startsWith('/whep/')) return url;
+      }
+      return url;
     }
 
     async function connectWhep(url) {
+      url = resolveWhepUrl(url);
       if (whepPc) {
         whepPc.onconnectionstatechange = null;
         whepPc.oniceconnectionstatechange = null;
@@ -273,26 +280,50 @@
         video.srcObject = null;
       }
       statsSample = null;
+      zeroKbpsStreak = 0;
+      lowKbpsStreak = 0;
+      videoFlowing = false;
       const pc = new RTCPeerConnection({ iceServers: [] });
       whepPc = pc;
-      attachPcHealthHandlers(pc);
       pc.addTransceiver('video', { direction: 'recvonly' });
-      pc.addTransceiver('audio', { direction: 'recvonly' });
       pc.ontrack = (ev) => {
+        if (pc !== whepPc) return;
         video.srcObject = ev.streams[0];
+        video.muted = true;
         video.play().catch(() => {});
+        videoFlowing = true;
         lastVideoBytesGrowthAt = Date.now();
+        playStatus.textContent = 'Playing';
       };
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
+      await waitForIceGathering(pc);
       const resp = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/sdp' },
-        body: offer.sdp,
+        body: pc.localDescription.sdp,
       });
       if (!resp.ok) throw new Error('Video failed — run ./scripts/start-mediamtx.sh');
       await pc.setRemoteDescription({ type: 'answer', sdp: await resp.text() });
       lastVideoBytesGrowthAt = Date.now();
+    }
+
+    function waitForIceGathering(pc) {
+      if (pc.iceGatheringState === 'complete') return Promise.resolve();
+      return new Promise((resolve) => {
+        const done = () => {
+          if (pc.iceGatheringState === 'complete') {
+            pc.removeEventListener('icegatheringstatechange', done);
+            clearTimeout(timer);
+            resolve();
+          }
+        };
+        pc.addEventListener('icegatheringstatechange', done);
+        const timer = setTimeout(() => {
+          pc.removeEventListener('icegatheringstatechange', done);
+          resolve();
+        }, ICE_GATHER_MS);
+      });
     }
 
     async function readVideoStats(pc) {
@@ -326,26 +357,40 @@
       if (bytes > lastVideoBytes) {
         lastVideoBytes = bytes;
         lastVideoBytesGrowthAt = Date.now();
+        if (bytes > 0) videoFlowing = true;
+      }
+
+      if (!videoFlowing) {
+        const noBytesYet = Date.now() - lastVideoBytesGrowthAt > NO_BYTE_GROWTH_MS;
+        if (noBytesYet) await handlePlaybackStall('No video data');
+        return;
       }
 
       const noGrowth = Date.now() - lastVideoBytesGrowthAt > NO_BYTE_GROWTH_MS;
-
       if (kbps <= 0) {
         zeroKbpsStreak += 1;
-        if (noGrowth || zeroKbpsStreak >= ZERO_KBPS_STREAK_LIMIT) {
-          await handlePlaybackStall(noGrowth ? 'Video stalled' : 'No incoming data');
+        if (noGrowth && zeroKbpsStreak >= ZERO_KBPS_STREAK_LIMIT) {
+          videoFlowing = false;
+          await handlePlaybackStall('Video stalled');
         }
         return;
       }
 
       zeroKbpsStreak = 0;
-
       if (qualities.length <= 1) return;
 
       if (kbps < current.minDownloadKbps * 0.85 && qualityIndex < qualities.length - 1) {
-        await reconnectToQuality(qualityIndex + 1, 'Low download — stepping down');
+        lowKbpsStreak += 1;
+        if (lowKbpsStreak >= LOW_KBPS_STREAK_LIMIT) {
+          lowKbpsStreak = 0;
+          videoFlowing = false;
+          await reconnectToQuality(qualityIndex + 1, 'Low download — stepping down');
+        }
         return;
       }
+
+      lowKbpsStreak = 0;
+
       if (qualityIndex > 0) {
         const upper = qualities[qualityIndex - 1];
         if (kbps > upper.minDownloadKbps * 1.25) {
@@ -359,6 +404,8 @@
       lastVideoBytes = 0;
       lastVideoBytesGrowthAt = Date.now();
       zeroKbpsStreak = 0;
+      lowKbpsStreak = 0;
+      videoFlowing = false;
       playbackTimer = setInterval(() => {
         runPlaybackTick().catch((e) => console.warn('playback tick', e));
       }, PLAYBACK_TICK_MS);

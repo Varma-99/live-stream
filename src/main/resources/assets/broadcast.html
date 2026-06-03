@@ -43,6 +43,97 @@
       </p>
     </div>
 
+    <div class="card qos-war-room" id="qosPanel" style="display:none">
+      <div class="war-header">
+        <div>
+          <h2 class="war-title">Live operations · QoS war room</h2>
+          <p class="war-sub">Ingest → Encode → Delivery → Viewers · updates every 3s</p>
+        </div>
+        <div class="war-overall-ring" id="qosOverallRing" data-level="warn">—</div>
+        <div class="war-status-col">
+          <span class="war-badge" id="warStatusBadge">INITIALIZING</span>
+          <span class="war-live-meta" id="warLiveMeta">—</span>
+        </div>
+      </div>
+
+      <div class="qos-row">
+        <div class="qos-row-head">
+          <span class="qos-row-title">INGEST</span>
+          <span class="qos-row-score" id="ingestRowScore">—</span>
+        </div>
+        <div class="metric-grid" id="qosIngestGrid"></div>
+        <canvas class="qos-chart" id="chartIngest" width="900" height="64" aria-label="Ingest bitrate trend"></canvas>
+      </div>
+
+      <div class="qos-row">
+        <div class="qos-row-head">
+          <span class="qos-row-title">ENCODE</span>
+          <span class="qos-row-score" id="encodeRowScore">—</span>
+        </div>
+        <div class="metric-grid" id="qosEncodeGrid"></div>
+        <canvas class="qos-chart" id="chartEncode" width="900" height="64" aria-label="Encode FPS trend"></canvas>
+      </div>
+
+      <div class="qos-row">
+        <div class="qos-row-head">
+          <span class="qos-row-title">DELIVERY (WebRTC)</span>
+          <span class="qos-row-score" id="deliveryRowScore">—</span>
+        </div>
+        <div class="metric-grid" id="qosDeliveryGrid"></div>
+        <canvas class="qos-chart" id="chartDelivery" width="900" height="64" aria-label="Packet loss trend"></canvas>
+      </div>
+
+      <div class="qos-row">
+        <div class="qos-row-head">
+          <span class="qos-row-title">VIEWERS (aggregate)</span>
+          <span class="qos-row-score" id="viewerRowScore">—</span>
+        </div>
+        <div class="metric-grid" id="qosViewersGrid"></div>
+      </div>
+
+      <div class="qos-row">
+        <div class="qos-row-head">
+          <span class="qos-row-title">OPS</span>
+        </div>
+        <div class="metric-grid" id="qosOpsGrid"></div>
+      </div>
+
+      <div class="qos-row">
+        <div class="qos-row-head">
+          <span class="qos-row-title">PER VIEWER</span>
+        </div>
+        <div class="qos-table-wrap">
+          <p class="war-empty" id="qosViewerEmpty">No viewer sessions yet</p>
+          <table class="qos-table" id="qosViewerTable" style="display:none">
+            <thead>
+              <tr>
+                <th>Session</th>
+                <th>Quality</th>
+                <th>↓ kbps</th>
+                <th>Loss %</th>
+                <th>RTT</th>
+                <th>Stalls</th>
+                <th>TTFF</th>
+              </tr>
+            </thead>
+            <tbody id="qosViewerBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="war-footer">
+        <div class="war-events-col">
+          <p class="qos-row-title">EVENT TIMELINE</p>
+          <ul class="qos-events" id="qosEvents"></ul>
+        </div>
+        <div class="war-pm-col">
+          <p class="qos-row-title">POSTMORTEM</p>
+          <button class="btn war-btn" type="button" id="postmortemBtn">Refresh analysis</button>
+          <pre class="qos-postmortem" id="qosPostmortem"></pre>
+        </div>
+      </div>
+    </div>
+
     <div class="card coupon-box" id="couponPanel" style="display:none">
       <h2>Drop coupon for viewers</h2>
       <div class="row">
@@ -84,8 +175,327 @@
     let stopBroadcasterHeartbeat = null;
     let endingIntentionally = false;
     let publicWebBase = location.origin;
+    let stopQosPoll = null;
+    const qosHistory = { ingestKbps: [], encodeFps: [], packetLoss: [], stallRate: [] };
+    const QOS_HISTORY_LEN = 48;
 
     const msgEl = document.getElementById('message');
+
+    function fmtMs(v) {
+      if (v == null || v < 0) return '—';
+      return Math.round(v) + ' ms';
+    }
+
+    function healthLevel(score) {
+      const s = Number(score);
+      if (Number.isNaN(s)) return 'warn';
+      if (s >= 80) return 'good';
+      if (s >= 55) return 'warn';
+      return 'bad';
+    }
+
+    function levelByKbps(kbps) {
+      if (kbps >= 1500) return 'good';
+      if (kbps >= 600) return 'warn';
+      return 'bad';
+    }
+
+    function levelBySpeed(ratio) {
+      if (ratio >= 0.95) return 'good';
+      if (ratio >= 0.7) return 'warn';
+      return 'bad';
+    }
+
+    function levelByLoss(pct) {
+      if (pct < 1) return 'good';
+      if (pct < 5) return 'warn';
+      return 'bad';
+    }
+
+    function levelByRtt(ms) {
+      if (ms < 100) return 'good';
+      if (ms < 250) return 'warn';
+      return 'bad';
+    }
+
+    function levelByCount(n, warnAt, badAt) {
+      if (n <= 0) return 'good';
+      if (n < badAt) return 'warn';
+      return 'bad';
+    }
+
+    function pushHistory(key, value) {
+      const arr = qosHistory[key];
+      arr.push(value);
+      if (arr.length > QOS_HISTORY_LEN) arr.shift();
+    }
+
+    function metricTile(label, value, sub, level) {
+      return '<div class="metric-tile ' + (level || 'warn') + '">' +
+        '<span class="metric-label">' + label + '</span>' +
+        '<span class="metric-value">' + value + '</span>' +
+        (sub ? '<span class="metric-sub">' + sub + '</span>' : '') +
+        '</div>';
+    }
+
+    function fillGrid(id, html) {
+      document.getElementById(id).innerHTML = html;
+    }
+
+    function setRowScore(elId, score) {
+      const el = document.getElementById(elId);
+      el.textContent = (score ?? '—') + '/100';
+      el.className = 'qos-row-score ' + healthLevel(score);
+    }
+
+    function drawSparkline(canvasId, series, opts) {
+      const canvas = document.getElementById(canvasId);
+      if (!canvas || !series.length) return;
+      const dpr = window.devicePixelRatio || 1;
+      const w = canvas.clientWidth || 900;
+      const h = canvas.clientHeight || 64;
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+      ctx.clearRect(0, 0, w, h);
+
+      const max = opts.max || Math.max(...series, 1);
+      const min = opts.min != null ? opts.min : 0;
+      const range = Math.max(max - min, 1);
+      const pad = 6;
+
+      if (opts.warnY != null) {
+        const yW = h - pad - ((opts.warnY - min) / range) * (h - pad * 2);
+        ctx.fillStyle = 'rgba(255, 193, 7, 0.12)';
+        ctx.fillRect(0, yW, w, h - yW);
+      }
+      if (opts.goodY != null) {
+        const yG = h - pad - ((opts.goodY - min) / range) * (h - pad * 2);
+        ctx.fillStyle = 'rgba(76, 175, 80, 0.1)';
+        ctx.fillRect(0, yG, w, yG - pad);
+      }
+
+      ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+      ctx.lineWidth = 1;
+      for (let i = 0; i < 4; i++) {
+        const y = pad + (i / 3) * (h - pad * 2);
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(w, y);
+        ctx.stroke();
+      }
+
+      const last = series[series.length - 1];
+      const lineColor = opts.colorFor ? opts.colorFor(last) : '#4fc3f7';
+      ctx.beginPath();
+      series.forEach((v, i) => {
+        const x = pad + (i / Math.max(series.length - 1, 1)) * (w - pad * 2);
+        const y = h - pad - ((v - min) / range) * (h - pad * 2);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.strokeStyle = lineColor;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.fillStyle = lineColor;
+      const lx = w - pad;
+      const ly = h - pad - ((last - min) / range) * (h - pad * 2);
+      ctx.beginPath();
+      ctx.arc(lx, ly, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function renderViewerTable(sessions) {
+      const empty = document.getElementById('qosViewerEmpty');
+      const table = document.getElementById('qosViewerTable');
+      const body = document.getElementById('qosViewerBody');
+      if (!sessions || sessions.length === 0) {
+        empty.style.display = 'block';
+        table.style.display = 'none';
+        body.innerHTML = '';
+        return;
+      }
+      empty.style.display = 'none';
+      table.style.display = 'table';
+      body.innerHTML = sessions.map(s => {
+        const pid = (s.presenceId || '').slice(0, 8);
+        const loss = s.packetLossPct != null ? s.packetLossPct.toFixed(1) : '0';
+        const lossCls = levelByLoss(Number(loss));
+        const rttCls = levelByRtt(s.rttMs || 0);
+        const stallCls = levelByCount(s.stalls || 0, 1, 3);
+        return '<tr>' +
+          '<td title="' + (s.presenceId || '') + '">' + pid + '…</td>' +
+          '<td>' + (s.qualityLabel || '—') + '</td>' +
+          '<td class="' + levelByKbps(s.downloadKbps || 0) + '">' + (s.downloadKbps || 0) + '</td>' +
+          '<td class="' + lossCls + '">' + loss + '</td>' +
+          '<td class="' + rttCls + '">' + (s.rttMs || 0) + '</td>' +
+          '<td class="' + stallCls + '">' + (s.stalls || 0) + '</td>' +
+          '<td>' + fmtMs(s.ttffMs) + '</td></tr>';
+      }).join('');
+    }
+
+    function deliveryScore(d) {
+      let s = 100;
+      if ((d.reconnectCount || 0) > 0) s -= Math.min(30, d.reconnectCount * 8);
+      if ((d.rebufferCount || 0) > 0) s -= Math.min(25, d.rebufferCount * 10);
+      if ((d.avgPacketLossPct || 0) > 1) s -= Math.min(25, d.avgPacketLossPct * 4);
+      if ((d.avgRttMs || 0) > 150) s -= 15;
+      return Math.max(0, Math.round(s));
+    }
+
+    function renderEvents(events) {
+      const ul = document.getElementById('qosEvents');
+      ul.innerHTML = '';
+      (events || []).slice(-16).reverse().forEach(ev => {
+        const li = document.createElement('li');
+        const stage = (ev.stage || '').toLowerCase();
+        const type = (ev.type || '').toLowerCase();
+        let lvl = 'info';
+        if (type.includes('stall') || type.includes('unstable') || type.includes('error') || type.includes('fatal')) lvl = 'bad';
+        else if (type.includes('reconnect') || type.includes('degraded') || type.includes('zombie')) lvl = 'warn';
+        else if (type.includes('recover') || type.includes('restored') || type.includes('join')) lvl = 'good';
+        li.className = 'ev-' + lvl;
+        li.innerHTML = '<span class="ev-stage">' + stage + '</span> ' +
+          '<span class="ev-type">' + type + '</span> — ' + (ev.message || '');
+        ul.appendChild(li);
+      });
+    }
+
+    async function refreshQos() {
+      if (!currentStreamId) return;
+      try {
+        const q = await fetch('/streams/' + currentStreamId + '/qos').then(r => {
+          if (!r.ok) throw new Error('QoS ' + r.status);
+          return r.json();
+        });
+
+        const overall = q.overallHealthScore ?? 0;
+        const ring = document.getElementById('qosOverallRing');
+        ring.textContent = overall;
+        ring.dataset.level = healthLevel(overall);
+        ring.className = 'war-overall-ring ' + healthLevel(overall);
+
+        const badge = document.getElementById('warStatusBadge');
+        const lvl = healthLevel(overall);
+        badge.className = 'war-badge ' + lvl;
+        badge.textContent = lvl === 'good' ? 'HEALTHY' : (lvl === 'warn' ? 'DEGRADED' : 'CRITICAL');
+
+        const ing = q.ingest || {};
+        const enc = q.encode || {};
+        const del = q.delivery || {};
+        const vw = q.viewer || {};
+        const ops = q.ops || {};
+
+        setRowScore('ingestRowScore', ing.ingestHealthScore);
+        setRowScore('encodeRowScore', enc.encodeHealthScore);
+        setRowScore('deliveryRowScore', deliveryScore(del));
+        setRowScore('viewerRowScore', vw.viewerHealthScore);
+
+        const curKbps = ing.currentIngestKbps || 0;
+        pushHistory('ingestKbps', curKbps);
+        pushHistory('encodeFps', enc.fpsActual || 0);
+        pushHistory('packetLoss', del.avgPacketLossPct || 0);
+        pushHistory('stallRate', vw.stallEventsPerViewerHour || 0);
+
+        fillGrid('qosIngestGrid',
+          metricTile('Now', curKbps + ' kbps', 'upload to MediaMTX', levelByKbps(curKbps)) +
+          metricTile('Avg / P95', (ing.ingestKbpsAvg || 0) + ' / ' + (ing.ingestKbpsP95 || 0), 'kbps', levelByKbps(ing.ingestKbpsAvg || 0)) +
+          metricTile('Stalls', ing.ingestStallCount ?? 0, fmtMs(ing.ingestStallTotalMs) + ' total', levelByCount(ing.ingestStallCount || 0, 1, 3)) +
+          metricTile('σ jitter', (ing.ingestKbpsStdDev != null ? ing.ingestKbpsStdDev.toFixed(0) : '0'), 'kbps stddev', 'warn') +
+          metricTile('MTTD', fmtMs(ops.mttdMs), 'detect stall', ops.mttdMs >= 0 ? 'warn' : 'good') +
+          metricTile('MTTR', fmtMs(ops.mttrMs), 'recover ingest', ops.mttrMs >= 0 ? 'good' : 'warn') +
+          (ing.ingestUnstable ? metricTile('Status', 'UNSTABLE', 'check uplink', 'bad') : metricTile('Status', 'OK', 'ingest path', 'good'))
+        );
+
+        fillGrid('qosEncodeGrid',
+          metricTile('FPS', (enc.fpsActual != null ? enc.fpsActual.toFixed(1) : '—'), 'target ' + (enc.targetFps || 30), levelBySpeed(enc.encodeSpeedRatio || 0)) +
+          metricTile('Speed', (enc.encodeSpeedRatio != null ? enc.encodeSpeedRatio.toFixed(2) : '—') + '×', 'realtime factor', levelBySpeed(enc.encodeSpeedRatio || 0)) +
+          metricTile('Dropped', enc.droppedFrames ?? 0, 'frames', levelByCount(enc.droppedFrames || 0, 5, 50)) +
+          metricTile('Duplicated', enc.duplicatedFrames ?? 0, 'frames', levelByCount(enc.duplicatedFrames || 0, 10, 100)) +
+          metricTile('Restarts', enc.encodeRestartCount ?? 0, 'FFmpeg', levelByCount(enc.encodeRestartCount || 0, 1, 2)) +
+          metricTile('Errors', enc.encodeErrorCount ?? 0, 'log errors', levelByCount(enc.encodeErrorCount || 0, 1, 1))
+        );
+
+        fillGrid('qosDeliveryGrid',
+          metricTile('Mode', (del.deliveryMode || 'webrtc').toUpperCase(), 'playback', 'good') +
+          metricTile('TTFF', fmtMs(del.startupTimeMs), 'time to first frame', del.startupTimeMs > 3000 ? 'warn' : 'good') +
+          metricTile('Stalls', del.rebufferCount ?? 0, 'rebuffer', levelByCount(del.rebufferCount || 0, 1, 5)) +
+          metricTile('Reconnects', del.reconnectCount ?? 0, 'WHEP', levelByCount(del.reconnectCount || 0, 1, 4)) +
+          metricTile('ABR ↓/↑', (del.abrStepDownCount ?? 0) + '/' + (del.abrStepUpCount ?? 0), 'quality', 'warn') +
+          metricTile('Loss', (del.avgPacketLossPct != null ? del.avgPacketLossPct.toFixed(1) : '0') + '%', 'WebRTC', levelByLoss(del.avgPacketLossPct || 0)) +
+          metricTile('RTT', (del.avgRttMs ?? 0) + ' ms', 'ICE', levelByRtt(del.avgRttMs || 0)) +
+          metricTile('Jitter', (del.avgJitterMs != null ? del.avgJitterMs.toFixed(1) : '0') + ' ms', '', del.avgJitterMs > 30 ? 'warn' : 'good') +
+          metricTile('Del MTTD', fmtMs(ops.deliveryMttdMs), 'detect', 'warn') +
+          metricTile('Del MTTR', fmtMs(ops.deliveryMttrMs), 'recover', 'good')
+        );
+
+        fillGrid('qosViewersGrid',
+          metricTile('Join OK', (vw.joinSuccessRate != null ? Math.round(vw.joinSuccessRate) : 100) + '%', 'success rate', (vw.joinSuccessRate || 100) >= 90 ? 'good' : 'warn') +
+          metricTile('TTFF avg', fmtMs(vw.timeToPlayMs), 'per viewer', vw.timeToPlayMs > 4000 ? 'warn' : 'good') +
+          metricTile('Stalls/hr', (vw.stallEventsPerViewerHour != null ? vw.stallEventsPerViewerHour.toFixed(1) : '0'), 'rate', levelByCount(Math.ceil(vw.stallEventsPerViewerHour || 0), 2, 8)) +
+          metricTile('Switches', vw.qualitySwitchCount ?? 0, 'ABR', 'warn') +
+          metricTile('Fatals', vw.fatalPlaybackErrors ?? 0, 'playback', levelByCount(vw.fatalPlaybackErrors || 0, 1, 1)) +
+          metricTile('Watch time', fmtMs(vw.totalWatchMs), 'aggregate', 'good')
+        );
+
+        fillGrid('qosOpsGrid',
+          metricTile('Viewers', ops.concurrentViewers ?? 0, 'concurrent', 'good') +
+          metricTile('Streams', ops.activeStreams ?? 1, 'active', 'good') +
+          metricTile('Ingest MTTD', fmtMs(ops.mttdMs), '', 'warn') +
+          metricTile('Ingest MTTR', fmtMs(ops.mttrMs), '', 'good') +
+          metricTile('Del MTTD', fmtMs(ops.deliveryMttdMs), '', 'warn') +
+          metricTile('Del MTTR', fmtMs(ops.deliveryMttrMs), '', 'good') +
+          (ops.zombieStop ? metricTile('Zombie', 'YES', 'panel lost', 'bad') : metricTile('Zombie', 'no', 'broadcaster OK', 'good'))
+        );
+
+        document.getElementById('warLiveMeta').textContent =
+          '👀 ' + (ops.concurrentViewers ?? 0) + ' viewers · mode ' + (del.deliveryMode || 'webrtc');
+
+        drawSparkline('chartIngest', qosHistory.ingestKbps, {
+          max: 3000, min: 0, goodY: 1500, warnY: 600,
+          colorFor: (v) => v >= 1500 ? '#66bb6a' : (v >= 600 ? '#ffca28' : '#ef5350'),
+        });
+        drawSparkline('chartEncode', qosHistory.encodeFps, {
+          max: 35, min: 0, goodY: 28, warnY: 20,
+          colorFor: (v) => v >= 28 ? '#66bb6a' : (v >= 20 ? '#ffca28' : '#ef5350'),
+        });
+        drawSparkline('chartDelivery', qosHistory.packetLoss, {
+          max: 10, min: 0, warnY: 1, goodY: 0.5,
+          colorFor: (v) => v < 1 ? '#66bb6a' : (v < 5 ? '#ffca28' : '#ef5350'),
+        });
+
+        renderViewerTable(q.viewerSessions);
+        renderEvents(q.recentEvents);
+      } catch (e) {
+        console.warn('qos refresh', e);
+        document.getElementById('warStatusBadge').textContent = 'QoS OFFLINE';
+        document.getElementById('warStatusBadge').className = 'war-badge bad';
+      }
+    }
+
+    function startQosPoll() {
+      if (stopQosPoll) clearInterval(stopQosPoll);
+      qosHistory.ingestKbps.length = 0;
+      qosHistory.encodeFps.length = 0;
+      qosHistory.packetLoss.length = 0;
+      qosHistory.stallRate.length = 0;
+      document.getElementById('qosPanel').style.display = 'block';
+      document.querySelector('.page').classList.add('war-room-active');
+      refreshQos();
+      stopQosPoll = setInterval(refreshQos, 3000);
+    }
+
+    function stopQosPollFn() {
+      if (stopQosPoll) {
+        clearInterval(stopQosPoll);
+        stopQosPoll = null;
+      }
+      document.getElementById('qosPanel').style.display = 'none';
+      document.querySelector('.page').classList.remove('war-room-active');
+      document.getElementById('qosPostmortem').textContent = '';
+    }
 
     async function loadPublicConfig() {
       try {
@@ -193,7 +603,9 @@
         setWatchLinks(streamId);
         stopBroadcasterHeartbeat = startBroadcasterHeartbeatSafe(streamId);
         stopPoll = Presence.startBroadcasterPoll(streamId, handleRoomUpdate);
+        startQosPoll();
       } else {
+        stopQosPollFn();
         currentStreamId = null;
         streamStatus = null;
         endingIntentionally = false;
@@ -377,6 +789,29 @@
         }
       } catch (e) {
         showMessage(String(e), false);
+      }
+    };
+
+    document.getElementById('postmortemBtn').onclick = async () => {
+      if (!currentStreamId) return;
+      const el = document.getElementById('qosPostmortem');
+      el.textContent = 'Loading…';
+      try {
+        const pm = await fetch('/streams/' + currentStreamId + '/postmortem').then(r => r.json());
+        const lines = [
+          'Root cause: ' + (pm.rootCause || '—'),
+          'Duration: ' + (pm.durationMs != null ? Math.round(pm.durationMs / 1000) + 's' : '—'),
+          'Zombie stop: ' + (pm.zombieStop ? 'yes' : 'no'),
+          'Overall score: ' + (pm.summary ? pm.summary.overallHealthScore : '—'),
+          '',
+          '--- timeline ---',
+        ];
+        (pm.timeline || []).forEach(ev => {
+          lines.push((ev.stage || '') + ' | ' + (ev.type || '') + ' | ' + (ev.message || ''));
+        });
+        el.textContent = lines.join('\n');
+      } catch (e) {
+        el.textContent = String(e);
       }
     };
 
