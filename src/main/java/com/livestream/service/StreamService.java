@@ -13,6 +13,8 @@ import com.livestream.model.UserRole;
 import com.livestream.api.dto.JoinResponse;
 import com.livestream.api.dto.RoomSnapshot;
 import com.livestream.mediamtx.IngestHealthService;
+import com.livestream.qos.QoSEventType;
+import com.livestream.qos.StreamQoSService;
 import com.livestream.realtime.BroadcasterControlService;
 import com.livestream.realtime.LiveRoomHub;
 import java.io.IOException;
@@ -33,6 +35,7 @@ public class StreamService {
     private final LiveRoomHub liveRoomHub;
     private final IngestHealthService ingestHealthService;
     private final BroadcasterControlService broadcasterControlService;
+    private final StreamQoSService streamQoSService;
 
     @Inject
     public StreamService(
@@ -42,7 +45,8 @@ public class StreamService {
             VideoService videoService,
             LiveRoomHub liveRoomHub,
             IngestHealthService ingestHealthService,
-            BroadcasterControlService broadcasterControlService) {
+            BroadcasterControlService broadcasterControlService,
+            StreamQoSService streamQoSService) {
         this.configuration = configuration;
         this.userDAO = userDAO;
         this.liveStreamDAO = liveStreamDAO;
@@ -50,6 +54,7 @@ public class StreamService {
         this.liveRoomHub = liveRoomHub;
         this.ingestHealthService = ingestHealthService;
         this.broadcasterControlService = broadcasterControlService;
+        this.streamQoSService = streamQoSService;
     }
 
     public List<StreamResponse> listLiveStreams() {
@@ -94,6 +99,7 @@ public class StreamService {
             throw new IllegalStateException("Failed to start video engine: " + e.getMessage(), e);
         }
         broadcasterControlService.onStreamStarted(saved.getId());
+        streamQoSService.beginSession(saved.getId());
         StreamResponse response = StreamResponse.from(saved);
         videoService.applyPlaybackUrls(response, saved);
         return response;
@@ -144,8 +150,9 @@ public class StreamService {
 
     public void simulateIngestUnstable(long streamId, int durationSec) {
         requireDevMode();
-        LiveStream stream = requireActiveStream(streamId);
+        requireActiveStream(streamId);
         ingestHealthService.simulateUnstable(streamId, durationSec);
+        streamQoSService.recordIngest(streamId, 100, true, true, true, "Demo: simulated upload problem");
     }
 
     public StreamResponse degradeStreamQuality(long streamId) {
@@ -153,6 +160,7 @@ public class StreamService {
         LiveStream stream = requireActiveStream(streamId);
         try {
             videoService.degradeStream(stream);
+            streamQoSService.recordDegrade(streamId, true);
         } catch (IOException e) {
             throw new IllegalStateException("Failed to degrade stream: " + e.getMessage(), e);
         }
@@ -166,12 +174,22 @@ public class StreamService {
         LiveStream stream = requireActiveStream(streamId);
         try {
             videoService.restoreStreamQuality(stream);
+            streamQoSService.recordDegrade(streamId, false);
         } catch (IOException e) {
             throw new IllegalStateException("Failed to restore stream quality: " + e.getMessage(), e);
         }
         StreamResponse response = StreamResponse.from(stream);
         videoService.applyPlaybackUrls(response, stream);
         return response;
+    }
+
+    public void requireStreamExists(long streamId) {
+        liveStreamDAO.findById(streamId)
+                .orElseThrow(() -> new IllegalArgumentException("Stream not found: " + streamId));
+    }
+
+    public void requireActiveOrEndedStream(long streamId) {
+        requireStreamExists(streamId);
     }
 
     private void requireDevMode() {
@@ -192,6 +210,7 @@ public class StreamService {
     private void endActiveStream(long streamId, LiveStream stream) {
         videoService.stopForStream(streamId);
         ingestHealthService.clear(streamId);
+        streamQoSService.endSession(streamId, false);
         broadcasterControlService.onStreamStopped(streamId);
         liveRoomHub.closeRoom(streamId);
         stream.setStatus(StreamStatus.ENDED);
@@ -208,6 +227,7 @@ public class StreamService {
         liveStreamDAO.findById(streamId)
                 .orElseThrow(() -> new IllegalArgumentException("Stream not found: " + streamId));
         String presenceId = liveRoomHub.join(streamId);
+        streamQoSService.recordViewerEvent(streamId, presenceId, QoSEventType.VIEWER_JOIN_OK, "Viewer joined", null);
         return new JoinResponse(presenceId, enrichRoom(streamId, liveRoomHub.snapshot(streamId)));
     }
 

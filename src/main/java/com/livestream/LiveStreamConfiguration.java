@@ -50,6 +50,12 @@ public class LiveStreamConfiguration extends Configuration {
     /** Three RTMP/WHEP rungs (high / mid / low) when using mediamtx delivery. */
     private boolean abrEnabled = true;
 
+    /**
+     * LAN base URL for phones on Wi-Fi, e.g. {@code http://10.255.50.77:8080}.
+     * WHEP URLs use {@link #mediamtxWebrtcBase}; FFmpeg RTMP ingest stays on localhost.
+     */
+    private String publicWebBase = "http://127.0.0.1:8080";
+
     @JsonProperty("database")
     public DataSourceFactory getDataSourceFactory() {
         return database;
@@ -192,5 +198,15 @@ public class LiveStreamConfiguration extends Configuration {
     @JsonProperty
     public void setAbrEnabled(boolean abrEnabled) {
         this.abrEnabled = abrEnabled;
+    }
+
+    @JsonProperty
+    public String getPublicWebBase() {
+        return publicWebBase;
+    }
+
+    @JsonProperty
+    public void setPublicWebBase(String publicWebBase) {
+        this.publicWebBase = publicWebBase;
     }
 }

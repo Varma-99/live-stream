@@ -4,6 +4,7 @@ import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import com.livestream.mediamtx.IngestHealthService;
 import com.livestream.model.LiveStream;
+import com.livestream.qos.StreamQoSService;
 import com.livestream.model.StreamStatus;
 import com.livestream.service.VideoService;
 import io.dropwizard.lifecycle.Managed;
@@ -32,6 +33,7 @@ public class BroadcasterControlService implements Managed {
     private final VideoService videoService;
     private final LiveRoomHub liveRoomHub;
     private final IngestHealthService ingestHealthService;
+    private final StreamQoSService streamQoSService;
 
     private final ConcurrentHashMap<Long, Long> lastHeartbeatMs = new ConcurrentHashMap<>();
     private ScheduledExecutorService scheduler;
@@ -41,11 +43,13 @@ public class BroadcasterControlService implements Managed {
             SessionFactory sessionFactory,
             VideoService videoService,
             LiveRoomHub liveRoomHub,
-            IngestHealthService ingestHealthService) {
+            IngestHealthService ingestHealthService,
+            StreamQoSService streamQoSService) {
         this.sessionFactory = sessionFactory;
         this.videoService = videoService;
         this.liveRoomHub = liveRoomHub;
         this.ingestHealthService = ingestHealthService;
+        this.streamQoSService = streamQoSService;
     }
 
     public void onStreamStarted(long streamId) {
@@ -108,6 +112,7 @@ public class BroadcasterControlService implements Managed {
                     return;
                 }
 
+                streamQoSService.endSession(streamId, true);
                 videoService.stopForStream(streamId);
                 ingestHealthService.clear(streamId);
                 liveRoomHub.closeRoom(streamId);

@@ -6,6 +6,7 @@ import com.livestream.LiveStreamConfiguration;
 import com.livestream.api.dto.QualityOption;
 import com.livestream.ffmpeg.FfmpegCommandBuilder;
 import com.livestream.model.LiveStream;
+import com.livestream.qos.StreamQoSService;
 import io.dropwizard.lifecycle.Managed;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -28,12 +29,14 @@ public class VideoService implements Managed {
     private static final Logger LOGGER = LoggerFactory.getLogger(VideoService.class);
 
     private final LiveStreamConfiguration configuration;
+    private final StreamQoSService streamQoSService;
     private final Map<Long, Process> processes = new ConcurrentHashMap<>();
     private final Map<Long, Boolean> degradedStreams = new ConcurrentHashMap<>();
 
     @Inject
-    public VideoService(LiveStreamConfiguration configuration) {
+    public VideoService(LiveStreamConfiguration configuration, StreamQoSService streamQoSService) {
         this.configuration = configuration;
+        this.streamQoSService = streamQoSService;
     }
 
     public boolean isMediamtxDelivery() {
@@ -72,6 +75,7 @@ public class VideoService implements Managed {
             throw new IllegalStateException("FFmpeg is not running for stream " + streamId);
         }
         stopForStream(streamId);
+        streamQoSService.recordEncodeRestart(streamId);
         startFfmpeg(stream, degraded);
         LOGGER.info("FFmpeg restarted for stream {} (degraded={})", streamId, degraded);
     }
@@ -105,6 +109,7 @@ public class VideoService implements Managed {
         } else {
             degradedStreams.remove(streamId);
         }
+        streamQoSService.recordEncodeStarted(streamId);
 
         LOGGER.info(
                 "FFmpeg started for stream {} (pid={}, delivery={}, abr={}, degraded={}, input={})",
@@ -189,9 +194,9 @@ public class VideoService implements Managed {
         return base + "/live/" + streamKey + suffix;
     }
 
+    /** Same-origin path; {@link com.livestream.api.WhepProxyResource} forwards to MediaMTX. */
     public String whepPlaybackUrl(String streamKey, String suffix) {
-        String base = configuration.getMediamtxWebrtcBase().replaceAll("/$", "");
-        return base + "/live/" + streamKey + suffix + "/whep";
+        return "/whep/live/" + streamKey + suffix + "/whep";
     }
 
     public List<QualityOption> qualityOptions(String streamKey) {
@@ -269,6 +274,7 @@ public class VideoService implements Managed {
         try (var reader = new java.io.BufferedReader(new java.io.InputStreamReader(process.getInputStream()))) {
             String line;
             while ((line = reader.readLine()) != null) {
+                streamQoSService.recordFfmpegLine(streamId, line);
                 String lower = line.toLowerCase(Locale.ROOT);
                 if (lower.contains("error") || lower.contains("denied") || lower.contains("not found")) {
                     LOGGER.warn("[ffmpeg-{}] {}", streamId, line);

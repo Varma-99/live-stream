@@ -4,6 +4,7 @@ import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import com.livestream.LiveStreamConfiguration;
 import com.livestream.model.LiveStream;
+import com.livestream.qos.StreamQoSService;
 import com.livestream.model.StreamStatus;
 import io.dropwizard.lifecycle.Managed;
 import java.util.Map;
@@ -29,6 +30,7 @@ public class IngestHealthService implements Managed {
     private final LiveStreamConfiguration configuration;
     private final SessionFactory sessionFactory;
     private final MediamtxApiClient mediamtxApiClient;
+    private final StreamQoSService streamQoSService;
 
     private final ConcurrentHashMap<Long, IngestSnapshot> snapshots = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Long, PathSample> lastSamples = new ConcurrentHashMap<>();
@@ -40,10 +42,12 @@ public class IngestHealthService implements Managed {
     public IngestHealthService(
             LiveStreamConfiguration configuration,
             SessionFactory sessionFactory,
-            MediamtxApiClient mediamtxApiClient) {
+            MediamtxApiClient mediamtxApiClient,
+            StreamQoSService streamQoSService) {
         this.configuration = configuration;
         this.sessionFactory = sessionFactory;
         this.mediamtxApiClient = mediamtxApiClient;
+        this.streamQoSService = streamQoSService;
     }
 
     public IngestSnapshot snapshot(long streamId) {
@@ -134,6 +138,7 @@ public class IngestHealthService implements Managed {
         Long bytes = pathBytes.get(pathName);
         if (bytes == null) {
             snapshots.put(streamId, new IngestSnapshot(false, 0, true, "No ingest on MediaMTX"));
+            streamQoSService.recordIngest(streamId, 0, false, false, true, "No ingest on MediaMTX");
             return;
         }
 
@@ -153,6 +158,7 @@ public class IngestHealthService implements Managed {
         boolean unstable = stalled || kbps < MIN_INGEST_KBPS;
         String reason = stalled ? "Upload stalled" : (unstable ? "Upload bitrate low" : null);
         snapshots.put(streamId, new IngestSnapshot(true, kbps, unstable, reason));
+        streamQoSService.recordIngest(streamId, kbps, true, stalled, unstable, reason);
     }
 
     private String primaryIngestPath(String streamKey) {

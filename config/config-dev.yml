@@ -5,14 +5,17 @@ server:
   applicationConnectors:
     - type: http
       port: 8080
+      bindHost: 0.0.0.0
   adminConnectors:
     - type: http
       port: 8081
+      bindHost: 0.0.0.0
 
 logging:
   level: INFO
   loggers:
     com.livestream: DEBUG
+    org.hibernate.engine.internal.StatisticalLoggingSessionEventListener: WARN
 
 devMode: true
 
@@ -40,13 +43,19 @@ cameraDevice: "0:0"
 useTestVideo: false
 rtmpPort: 1935
 
+# Method A (LAN): set YOUR_MAC_LAN_IP in publicWebBase + mediamtx.yml webrtcAdditionalHosts (ipconfig getifaddr en0).
+# mediamtxWebrtcBase stays http://127.0.0.1:8889 — the app proxies WHEP on :8080 to localhost MediaMTX.
+# Find IP: ipconfig getifaddr en0  (Wi-Fi) — must match on every device that watches.
+publicWebBase: http://10.255.50.77:8080
+
 # Delivery: mediamtx = FFmpeg → RTMP → MediaMTX → WebRTC (low latency). hls = file-based HLS.
 streamDelivery: mediamtx
 mediamtxRtmpPublishBase: rtmp://127.0.0.1:1935
+# Server-side only (WHEP proxy on this Mac → localhost). Do not use LAN IP here.
 mediamtxWebrtcBase: http://127.0.0.1:8889
 mediamtxApiBase: http://127.0.0.1:9997
 mediamtxApiEnabled: true
 abrEnabled: true
 
-# MediaMTX mode: ultrafast + zerolatency, 0.5s GOP, localhost WebRTC (see FfmpegCommandBuilder)
+# MediaMTX mode: ultrafast + zerolatency, 0.5s GOP (see FfmpegCommandBuilder)
 # HLS mode only (streamDelivery: hls): 2s segments, GOP 30 frames

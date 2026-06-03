@@ -96,6 +96,19 @@ public class LiveRoomHub {
         rooms.remove(streamId);
     }
 
+    public int viewersForStream(long streamId) {
+        Room room = rooms.get(streamId);
+        return room == null ? 0 : room.pruneAndCount();
+    }
+
+    public int totalViewers() {
+        int total = 0;
+        for (Room room : rooms.values()) {
+            total += room.pruneAndCount();
+        }
+        return total;
+    }
+
     private void requireLive(long streamId) {
         if (!isStreamBroadcasting(streamId)) {
             throw new IllegalStateException("Stream is not active");

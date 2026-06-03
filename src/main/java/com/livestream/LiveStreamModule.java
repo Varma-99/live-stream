@@ -6,6 +6,7 @@ import com.livestream.dao.UserDAO;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.livestream.mediamtx.IngestHealthService;
 import com.livestream.mediamtx.MediamtxApiClient;
+import com.livestream.qos.StreamQoSService;
 import com.livestream.realtime.BroadcasterControlService;
 import com.livestream.realtime.LiveRoomHub;
 import com.livestream.service.DevDataSeeder;
@@ -45,5 +46,6 @@ public class LiveStreamModule extends AbstractModule {
         bind(BroadcasterControlService.class);
         bind(MediamtxApiClient.class);
         bind(IngestHealthService.class);
+        bind(StreamQoSService.class);
     }
 }
