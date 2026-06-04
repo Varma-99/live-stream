@@ -103,3 +103,12 @@ Ramp: 60s → 200 VUs, hold 90s, ramp down 40s (~3m20s total).
 ```bash
 k6 run --env TARGET_VUS=50 load-test/k6-viewer-qos.js
 ```
+
+## SRS-bench suite (4 streaming tests)
+
+RTMP + WebRTC load + FFmpeg degrade. See **`load-test/srs-bench-suite/README.md`**.
+
+```bash
+./load-test/srs-bench-suite/00-install-srs-bench.sh   # once
+./load-test/srs-bench-suite/run-all.sh
+```

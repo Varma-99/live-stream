@@ -1,0 +1,63 @@
+STREAM TEST SUITE — RUN SUMMARY
+Date: 4 June 2026
+Project: live-stream
+Stream: id=2  key=SHfNVvhoX_N8TWux3mG__pDJtxtBoTQE  title=llll
+
+================================================================================
+OVERALL
+================================================================================
+  Test 1  PASS   Baseline QoS + postmortem saved
+  Test 2  PARTIAL  100-sub RTMP load NOT executed (timeout command missing on macOS)
+  Test 3  PASS   15 RTMP publishers for 60s
+  Test 4  PASS   Degrade + restore APIs OK with 10 RTMP subscribers
+
+  Recommendation: Re-run Test 2 only after updating scripts (run_with_timeout fix).
+
+================================================================================
+TEST 1 — FFMPEG BASELINE
+================================================================================
+  Reports: load-test/reports/srs-suite-01-baseline-20260604-151726/
+
+  Confirms: App running, stream LIVE, FFmpeg publishing, QoS API responding.
+  Files: qos-baseline.json, postmortem-baseline.json
+
+================================================================================
+TEST 2 — 100 SUBSCRIBERS (DELIVERY)
+================================================================================
+  Reports: load-test/reports/srs-suite-02-whep-100-20260604-151730/
+
+  Intended: sb_rtmp_load -c 100 for 90s on rtmp://127.0.0.1:1935/live/..._high
+  Actual:   "timeout: command not found" — load step skipped
+  WebRTC:   srs_bench skipped (not installed)
+
+  Files still saved: qos-before-load.json, qos-after-load.json, postmortem-after-load.json
+  These are snapshots, not proof of 100-client load.
+
+================================================================================
+TEST 3 — MANY RTMP PUBLISHERS
+================================================================================
+  Reports: load-test/reports/srs-suite-03-rtmp-many-20260604-151756/
+
+  15 publishers → bench1_high … bench15_high (does not use your stream key)
+  Duration: 60 seconds
+  Check: publish-1.log … publish-15.log
+
+================================================================================
+TEST 4 — DEGRADE / RESTORE
+================================================================================
+  Reports: load-test/reports/srs-suite-04-degrade-20260604-151914/
+
+  10 RTMP subscribers during test
+  Degrade API:  encodeDegraded true
+  Restore API: encodeDegraded false
+  Files: qos-before-degrade.json, qos-after-degrade.json, qos-after-restore.json,
+         postmortem-after-degrade-test.json
+
+================================================================================
+NEXT STEPS
+================================================================================
+  1. ./load-test/srs-bench-suite/02-whep-100.sh   (re-run delivery load)
+  2. Screenshot war room for each test (optional archive)
+  3. Optional: brew install srt go && build ~/srs-bench-rtc for WebRTC bench
+
+  Full guide: stream-test/README.md

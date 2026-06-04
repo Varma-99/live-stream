@@ -7,3 +7,5 @@ data/hls/
 data/livestream-dev.mv.db
 data/livestream-dev.trace.db
 *.log
+load-test/reports/srs-suite-*/
+load-test/reports/srs-bench-suite-*/
