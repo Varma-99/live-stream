@@ -51,7 +51,7 @@ public class LiveStreamConfiguration extends Configuration {
     private boolean abrEnabled = true;
 
     /**
-     * LAN base URL for phones on Wi-Fi, e.g. {@code http://10.255.50.77:8080}.
+     * LAN base URL for phones on Wi-Fi, e.g. {@code http://10.255.51.106:8080}.
      * WHEP URLs use {@link #mediamtxWebrtcBase}; FFmpeg RTMP ingest stays on localhost.
      */
     private String publicWebBase = "http://127.0.0.1:8080";
