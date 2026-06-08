@@ -1,0 +1,7 @@
+MediaMTX WHEP (direct):  POST http://127.0.0.1:8889/live/SHfNVvhoX_N8TWux3mG__pDJtxtBoTQE_high/whep
+App proxy WHEP:          POST http://127.0.0.1:8080/whep/live/SHfNVvhoX_N8TWux3mG__pDJtxtBoTQE_high/whep
+
+If srs_bench WebRTC fails against MediaMTX, use a browser smoke test on:
+  http://127.0.0.1:8080/ui/viewer.html?stream=2
+
+Optional API load (not real WebRTC): k6 run --env TARGET_VUS=100 load-test/k6-viewer-qos.js

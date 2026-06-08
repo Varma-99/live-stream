@@ -1,0 +1,5 @@
+stream_id=2
+stream_key=SHfNVvhoX_N8TWux3mG__pDJtxtBoTQE
+whep_direct=http://127.0.0.1:8889/live/SHfNVvhoX_N8TWux3mG__pDJtxtBoTQE_high/whep
+whep_proxy=http://127.0.0.1:8080/whep/live/SHfNVvhoX_N8TWux3mG__pDJtxtBoTQE_high/whep
+rtmp_play=rtmp://127.0.0.1:1935/live/SHfNVvhoX_N8TWux3mG__pDJtxtBoTQE_high

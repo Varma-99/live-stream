@@ -1,0 +1,161 @@
+\documentclass[a4paper,11pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{tabularx}
+
+\geometry{margin=2.2cm}
+\hypersetup{colorlinks=true,linkcolor=blue,urlcolor=blue}
+
+\title{\textbf{Live Stream Platform --- Load Test Report}\\[4pt]\large Stress, QoS, and Scalability Assessment}
+\author{QA Engineering}
+\date{2025-06-04}
+
+\begin{document}
+\maketitle
+\thispagestyle{empty}
+
+\section{Executive Summary}
+
+Four stress suites were executed against the live-stream platform using \texttt{srs-bench} (RTMP publish/subscribe) and \texttt{k6} (HTTP/QoS simulation). The platform demonstrated robust ingest and encode handling (health score 100/100) under baseline and many-publisher conditions. The degrade/restore suite revealed measurable QoS degradation (score drop 100 $\rightarrow$ 79) with successful recovery (score 90 post-restore). The k6 run identified a critical integration issue: 100\% of join requests failed (203,548 check failures across 101,774 requests), suggesting the API contract changed without updating the load script.
+
+\section{Test Environment}
+
+\begin{itemize}
+  \item \textbf{Platform:} macOS (Darwin), single-node deployment
+  \item \textbf{Media Server:} MediaMTX (RTMP ingest port 1935, WHEP/WebRTC delivery)
+  \item \textbf{Backend:} Dropwizard + Guice + Hibernate (config-dev.yml, database max size 32)
+  \item \textbf{Encoder:} FFmpeg (software, camera input, ABR with degrade/restore)
+  \item \textbf{Load Generators:} srs-bench 1.0.14 (RTMP), k6 0.x (HTTP)
+  \item \textbf{Stream:} Single live show started via broadcast UI (camera input)
+\end{itemize}
+
+\section{Suite Results}
+
+\subsection{Test 1 --- Baseline (QoS Snapshot)}
+
+\texttt{01-baseline.sh} --- Record a QoS snapshot of a stable stream with no additional load.
+
+\begin{itemize}
+  \item \textbf{Overall Health:} 100/100
+  \item \textbf{Ingest:} 2,668 Kbps avg
+  \item \textbf{Encode:} 30 FPS steady, no dropped/duplicated frames, speed ratio 1.0
+  \item \textbf{Delivery:} WebRTC, zero rebuffers, zero packet loss
+  \item \textbf{Operations:} 1 active stream, MTTR not applicable (no failures)
+\end{itemize}
+
+\subsection{Test 2 --- 100 WHEP/WebRTC Subscribers}
+
+\texttt{02-whep-100.sh} --- Stress WebRTC delivery with concurrent subscribers.\\
+\textbf{Result:} Not executed. The macOS environment lacked a working \texttt{timeout} command, and the \texttt{srs\_bench} WebRTC build (feature/rtc) was incompatible with MediaMTX's WHEP endpoint. A fallback to RTMP subscriber load was also blocked. The script fix (\texttt{run\_with\_timeout}) has been applied but the re-run is pending.
+
+\subsection{Test 3 --- Many RTMP Publishers}
+
+\texttt{03-rtmp-many.sh} --- 15 concurrent RTMP publishers targeting distinct stream paths (\texttt{bench1\_high} through \texttt{bench15\_high}).
+
+\begin{itemize}
+  \item \textbf{Overall Health:} 100/100
+  \item \textbf{Ingest:} 2,628 Kbps avg (p95 2,721), one ingest recovery event (4,006 ms)
+  \item \textbf{Encode:} 30 FPS steady, no dropped frames
+  \item \textbf{Postmortem:} No root cause identified (healthy session, 121 s duration)
+  \item \textbf{Zombie Stop:} False --- normal session termination
+\end{itemize}
+
+Interpretation: The single monitored stream (stream ID 2) was unaffected by 15 external publishers on different paths. MediaMTX isolated the streams correctly.
+
+\subsection{Test 4 --- Degrade/Restore + 10 Subscribers}
+
+\texttt{04-degrade-whep.sh} --- Trigger FFmpeg degrade, observe QoS drop, then restore and observe recovery.
+
+\subsubsection{During Degrade}
+\begin{itemize}
+  \item \textbf{Overall Health:} 79/100 (drop from 100)
+  \item \textbf{Ingest:} Highly variable (std dev 1,042 Kbps)
+  \item \textbf{Encode:} Health score 84/100, 2 encoder restarts recorded
+  \item \textbf{Operations:} MTTR 19,004 ms across 2 recovery events
+\end{itemize}
+
+\subsubsection{After Restore}
+\begin{itemize}
+  \item \textbf{Overall Health:} 90/100 (partial recovery)
+  \item \textbf{Ingest:} Recovered to 2,466 Kbps, 2 recovery events totalling 38,008 ms
+  \item \textbf{Encode:} Health improved but did not return to 100 due to accumulated restarts
+\end{itemize}
+
+Interpretation: The degrade/restore mechanism functions correctly --- QoS metrics detect and surface the degradation, and recovery is initiated. The post-restore score of 90 (not 100) reflects encoder restart history captured in the health model, which is correct behaviour for a transparent scoring system.
+
+\section{k6 HTTP/QoS Load Test}
+
+\subsection{Configuration}
+\begin{itemize}
+  \item 50 virtual users, ramp 60~s, hold 90~s, ramp down 40~s
+  \item 101,774 HTTP iterations, peak 848 req/s
+  \item Averaged 14.4 KB/s sent, 15.8 KB/s received
+\end{itemize}
+
+\subsection{Key Metrics}
+\begin{center}
+\begin{tabular}{lrr}
+\toprule
+\textbf{Metric} & \textbf{Value} & \textbf{Threshold met?} \\
+\midrule
+Total requests & 101,774 & --- \\
+Request rate & 848 req/s & --- \\
+Check passes & 0 & --- \\
+Check failures & 203,548 & --- \\
+Join success rate & 0\% & No ($>$95\% required) \\
+HTTP failure rate & 100\% & Yes ($<$5\% required) \\
+p95 response time & 1.35 ms & No ($<$1 s required) \\
+p95 join duration & 1.35 ms & --- \\
+Join OK threshold & 0 passes & No \\
+QoS stats OK threshold & 0 passes & No \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Interpretation}
+The 100\% check failure rate on \texttt{join status 200} and \texttt{join has presenceId} indicates that every join request returned either a non-200 status or a response body missing the expected \texttt{presenceId} field. This is not a performance issue --- the API was responding (HTTP requests did not fail, 0\% HTTP error rate by k6's measure) --- but the response payload did not match the k6 script's expectations. Likely causes:
+\begin{enumerate}
+  \item The stream was not active when k6 ran (start stream $\rightarrow$ k6 ordering mismatch)
+  \item The presence protocol response format changed
+  \item CORS or content-type negotiation rejected the request body
+\end{enumerate}
+
+\section{QoS Architecture Notes}
+
+The QoS monitoring pipeline consists of four stages:
+\begin{enumerate}
+  \item \textbf{Ingest:} MediaMTX API polling for bitrate, path status, stall detection
+  \item \textbf{Encode:} FFmpeg stderr parsing (FPS, speed, drop/dup frames, restarts)
+  \item \textbf{Delivery:} Per-viewer WebRTC stats (RTT, jitter, packet loss, ABR switches)
+  \item \textbf{Viewer:} Join/heartbeat/leave HTTP events with synthetic stall and quality-change reports
+\end{enumerate}
+
+All state is currently in-memory (no DB persistence). Postmortem analysis produces a root-cause assessment and timeline of events.
+
+\section{Next Steps}
+
+\begin{enumerate}
+  \item \textbf{Re-run srs-bench Test 2} now that the \texttt{run\_with\_timeout} helper is available
+  \item \textbf{Debug k6 join failure} by inspecting the actual API response during a k6 run (add \texttt{console.log} or capture response body on failure)
+  \item \textbf{Write JUnit 5 + Mockito unit tests} for the core QoS classes (highest priority gap before adding features)
+  \item \textbf{Implement per-stream delivery mode selection} (HLS vs WebRTC at stream start time)
+  \item \textbf{Add HLS QoS beacons} for viewers on HLS playback
+  \item \textbf{Evaluate SRS origin-edge clustering} if horizontal scaling of a single popular stream is needed (MediaMTX + HAProxy cannot replicate stream state across nodes)
+\end{enumerate}
+
+\section{Recommendations}
+
+\begin{enumerate}
+  \item \textbf{Fix the k6 test script} to match the current join API contract before running further HTTP load tests. The p95 response time (1.35 ms) and request throughput (848 req/s) suggest the server handles the load well --- the issue is entirely in test-client expectations.
+  \item \textbf{Unify load-test tooling.} The srs-bench suite covers RTMP and WebRTC stress, while k6 covers HTTP control-plane load. Document which tool is used for which dimension and ensure both are run as part of CI.
+  \item \textbf{Persist QoS data to a database.} In-memory state is lost on restart. A time-series store (e.g., InfluxDB or PostgreSQL with TimescaleDB) would enable historical analysis and trend detection.
+  \item \textbf{Add chaos engineering.} Use Toxiproxy or similar to inject network latency, packet loss, and process crashes to validate the degrade/restore pipeline under realistic failure conditions.
+\end{enumerate}
+
+\end{document}

@@ -1,0 +1,41 @@
+[2026-06-04 15:19:15.154] [report] [35191] threads:0 alive:0 duration:0 tduration:0 nread:0.00 nwrite:0.00 tasks:0 etasks:0 stasks:0 estasks:0
+[2026-06-04 15:19:15.153][0][trace] params url=rtmp://127.0.0.1:1935/live/SHfNVvhoX_N8TWux3mG__pDJtxtBoTQE_high, threads=10, start=5.00, delay=1.00, error=3.00, report=30.00, count=0
+[2026-06-04 15:19:15.154][0][trace] create thread for task #1 success
+[2026-06-04 15:19:15.154][0][trace] create thread for task #2 success
+[2026-06-04 15:19:15.154][0][trace] create thread for task #3 success
+[2026-06-04 15:19:15.154][0][trace] create thread for task #4 success
+[2026-06-04 15:19:15.154][0][trace] create thread for task #5 success
+[2026-06-04 15:19:15.154][0][trace] create thread for task #6 success
+[2026-06-04 15:19:15.154][0][trace] create thread for task #7 success
+[2026-06-04 15:19:15.154][0][trace] create thread for task #8 success
+[2026-06-04 15:19:15.154][0][trace] create thread for task #9 success
+[2026-06-04 15:19:15.154][0][trace] create thread for task #10 success
+[2026-06-04 15:19:15.154][1][trace] start random sleep 5207ms
+[2026-06-04 15:19:15.154][2][trace] start random sleep 4358ms
+[2026-06-04 15:19:15.154][3][trace] start random sleep 3692ms
+[2026-06-04 15:19:15.154][4][trace] start random sleep 4959ms
+[2026-06-04 15:19:15.155][5][trace] start random sleep 4896ms
+[2026-06-04 15:19:15.155][6][trace] start random sleep 3995ms
+[2026-06-04 15:19:15.155][7][trace] start random sleep 4394ms
+[2026-06-04 15:19:15.155][8][trace] start random sleep 4814ms
+[2026-06-04 15:19:15.155][9][trace] start random sleep 5226ms
+[2026-06-04 15:19:15.155][10][trace] start random sleep 5410ms
+[2026-06-04 15:19:18.847][3][trace] start to process RTMP play task #3, schema=rtmp, host=127.0.0.1, port=1935, tcUrl=rtmp://127.0.0.1:1935/live, stream=SHfNVvhoX_N8TWux3mG__pDJtxtBoTQE_high, startup=5.00, delay=1.00, error=3.00, count=0
+[2026-06-04 15:19:19.149][6][trace] start to process RTMP play task #6, schema=rtmp, host=127.0.0.1, port=1935, tcUrl=rtmp://127.0.0.1:1935/live, stream=SHfNVvhoX_N8TWux3mG__pDJtxtBoTQE_high, startup=5.00, delay=1.00, error=3.00, count=0
+[2026-06-04 15:19:19.427][3][error] rtmp client dump av failed. ret=104 errno=54(Connection reset by peer)
+[2026-06-04 15:19:19.427][3][error] rtmp client dump url failed. ret=104 errno=54(Connection reset by peer)
+[2026-06-04 15:19:19.513][2][trace] start to process RTMP play task #2, schema=rtmp, host=127.0.0.1, port=1935, tcUrl=rtmp://127.0.0.1:1935/live, stream=SHfNVvhoX_N8TWux3mG__pDJtxtBoTQE_high, startup=5.00, delay=1.00, error=3.00, count=0
+[2026-06-04 15:19:19.515][2][error] rtmp client dump av failed. ret=104 errno=54(Connection reset by peer)
+[2026-06-04 15:19:19.515][2][error] rtmp client dump url failed. ret=104 errno=54(Connection reset by peer)
+[2026-06-04 15:19:19.549][7][trace] start to process RTMP play task #7, schema=rtmp, host=127.0.0.1, port=1935, tcUrl=rtmp://127.0.0.1:1935/live, stream=SHfNVvhoX_N8TWux3mG__pDJtxtBoTQE_high, startup=5.00, delay=1.00, error=3.00, count=0
+[2026-06-04 15:19:19.550][7][error] rtmp client dump av failed. ret=104 errno=54(Connection reset by peer)
+[2026-06-04 15:19:19.550][7][error] rtmp client dump url failed. ret=104 errno=54(Connection reset by peer)
+[2026-06-04 15:19:19.969][8][trace] start to process RTMP play task #8, schema=rtmp, host=127.0.0.1, port=1935, tcUrl=rtmp://127.0.0.1:1935/live, stream=SHfNVvhoX_N8TWux3mG__pDJtxtBoTQE_high, startup=5.00, delay=1.00, error=3.00, count=0
+[2026-06-04 15:19:19.971][8][error] rtmp client dump av failed. ret=104 errno=54(Connection reset by peer)
+[2026-06-04 15:19:19.971][8][error] rtmp client dump url failed. ret=104 errno=54(Connection reset by peer)
+[2026-06-04 15:19:20.051][5][trace] start to process RTMP play task #5, schema=rtmp, host=127.0.0.1, port=1935, tcUrl=rtmp://127.0.0.1:1935/live, stream=SHfNVvhoX_N8TWux3mG__pDJtxtBoTQE_high, startup=5.00, delay=1.00, error=3.00, count=0
+[2026-06-04 15:19:20.053][5][error] rtmp client dump av failed. ret=104 errno=54(Connection reset by peer)
+[2026-06-04 15:19:20.053][5][error] rtmp client dump url failed. ret=104 errno=54(Connection reset by peer)
+[2026-06-04 15:19:20.114][4][trace] start to process RTMP play task #4, schema=rtmp, hos[2026-06-04 15:19:45.155] [report] [35191] threads:10 alive:10 duration:30 tduration:0 nread:1.31 nwrite:0.02 tasks:20 etasks:10 stasks:0 estasks:0
+[2026-06-04 15:20:15.156] [report] [35191] threads:10 alive:10 duration:60 tduration:0 nread:9.67 nwrite:0.01 tasks:29 etasks:19 stasks:0 estasks:0
+[2026-06-04 15:20:45.156] [report] [35191] threads:10 alive:10 duration:90 tduration:0 nread:14.23 nwrite:0.01 tasks:29 etasks:19 stasks:0 estasks:0

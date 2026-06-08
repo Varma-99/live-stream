@@ -1,0 +1,15 @@
+rtmp://127.0.0.1:1935/live/bench1_high
+rtmp://127.0.0.1:1935/live/bench2_high
+rtmp://127.0.0.1:1935/live/bench3_high
+rtmp://127.0.0.1:1935/live/bench4_high
+rtmp://127.0.0.1:1935/live/bench5_high
+rtmp://127.0.0.1:1935/live/bench6_high
+rtmp://127.0.0.1:1935/live/bench7_high
+rtmp://127.0.0.1:1935/live/bench8_high
+rtmp://127.0.0.1:1935/live/bench9_high
+rtmp://127.0.0.1:1935/live/bench10_high
+rtmp://127.0.0.1:1935/live/bench11_high
+rtmp://127.0.0.1:1935/live/bench12_high
+rtmp://127.0.0.1:1935/live/bench13_high
+rtmp://127.0.0.1:1935/live/bench14_high
+rtmp://127.0.0.1:1935/live/bench15_high
