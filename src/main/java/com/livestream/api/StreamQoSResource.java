@@ -17,7 +17,9 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.Response;
+import java.util.List;
 
 @Path("/streams")
 @Produces(MediaType.APPLICATION_JSON)
@@ -53,6 +55,22 @@ public class StreamQoSResource {
     public StreamPostmortemResponse postmortem(@PathParam("id") Long streamId) {
         streamService.requireStreamExists(streamId);
         return streamQoSService.postmortem(streamId);
+    }
+
+    @GET
+    @Path("/{id}/qos/history")
+    @UnitOfWork
+    public List<StreamPostmortemResponse> qosHistory(@PathParam("id") Long streamId) {
+        streamService.requireStreamExists(streamId);
+        return streamQoSService.historyForStream(streamId);
+    }
+
+    @GET
+    @Path("/qos/history")
+    @UnitOfWork
+    public List<StreamPostmortemResponse> globalQosHistory(@QueryParam("limit") Integer limit) {
+        int n = limit != null && limit > 0 ? limit : 20;
+        return streamQoSService.recentHistory(n);
     }
 
     @POST
@@ -99,6 +117,7 @@ public class StreamQoSResource {
                 case "RECOVERED", "DELIVERY_RECOVERED" -> QoSEventType.DELIVERY_RECOVERED;
                 case "FATAL", "ERROR" -> QoSEventType.VIEWER_FATAL;
                 case "JOIN" -> QoSEventType.VIEWER_JOIN_OK;
+                case "WATCH_SEC" -> QoSEventType.VIEWER_LEAVE;
                 default -> throw new IllegalArgumentException("Unknown eventType: " + raw);
             };
         }

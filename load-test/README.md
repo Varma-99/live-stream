@@ -60,7 +60,7 @@ k6 run --summary-export=load-test/results/k6-summary.json load-test/k6-viewer-qo
 # auto-picks live stream id; or: --env STREAM_ID=2 after ./load-test/active-stream.sh
 ```
 
-LAN IP (phones / other machines): use `BASE_URL=http://10.255.51.106:8080`.
+LAN IP (phones / other machines): use `BASE_URL=http://10.255.51.42:8080`.
 
 ## While k6 runs
 
@@ -85,6 +85,25 @@ k6 run --env TARGET_VUS=200 --summary-export=load-test/results/k6-200-summary.js
 ```
 
 Ramp: 60s → 200 VUs, hold 90s, ramp down 40s (~3m20s total).
+
+## 600 viewers
+
+```bash
+chmod +x load-test/run-600.sh
+./load-test/run-600.sh
+```
+
+Ramp: 120s → 600 VUs, hold 180s, ramp down 60s (~6m). Ensure `database.maxSize: 128` in `config-dev.yml` and restart the app first.
+
+## HLS segment load (k6)
+
+Start a stream with **HLS** delivery on the broadcast page, wait ~10s, then:
+
+```bash
+chmod +x load-test/hls-bench-suite/*.sh load-test/run-600.sh
+./load-test/hls-bench-suite/01-run.sh
+# or: k6 run --env TARGET_VUS=20 load-test/hls-load-test.js
+```
 
 **What k6 mixes in (viewer-side only):**
 

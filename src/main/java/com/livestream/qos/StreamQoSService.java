@@ -11,29 +11,44 @@ import com.livestream.api.dto.StreamPostmortemResponse;
 import com.livestream.api.dto.StreamQoSResponse;
 import com.livestream.api.dto.ViewerDeliveryQoSDto;
 import com.livestream.api.dto.ViewerQoEAggregateDto;
+import com.livestream.dao.LiveStreamDAO;
+import com.livestream.dao.QoSSessionDAO;
+import com.livestream.model.LiveStream;
 import com.livestream.realtime.LiveRoomHub;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Singleton
 public class StreamQoSService {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(StreamQoSService.class);
     private static final long DEFAULT_MIN_INGEST_KBPS = 300;
 
     private final LiveStreamConfiguration configuration;
     private final LiveRoomHub liveRoomHub;
+    private final LiveStreamDAO liveStreamDAO;
+    private final QoSSessionDAO qosSessionDAO;
     private final ConcurrentHashMap<Long, StreamQoSSession> sessions = new ConcurrentHashMap<>();
 
     @Inject
-    public StreamQoSService(LiveStreamConfiguration configuration, LiveRoomHub liveRoomHub) {
+    public StreamQoSService(
+            LiveStreamConfiguration configuration,
+            LiveRoomHub liveRoomHub,
+            LiveStreamDAO liveStreamDAO,
+            QoSSessionDAO qosSessionDAO) {
         this.configuration = configuration;
         this.liveRoomHub = liveRoomHub;
+        this.liveStreamDAO = liveStreamDAO;
+        this.qosSessionDAO = qosSessionDAO;
     }
 
-    public void beginSession(long streamId) {
+    public void beginSession(long streamId, String deliveryMode) {
         StreamQoSSession session = new StreamQoSSession(streamId);
         session.setEncodeTargetFps(30);
+        session.setDeliveryMode(deliveryMode != null ? deliveryMode : defaultDeliveryMode());
         session.addEvent(QoSEvent.of(QoSStage.OPS, QoSEventType.STREAM_STARTED, "Stream session started"));
         sessions.put(streamId, session);
     }
@@ -43,6 +58,7 @@ public class StreamQoSService {
         sessions.computeIfAbsent(streamId, id -> {
             StreamQoSSession session = new StreamQoSSession(id);
             session.setEncodeTargetFps(30);
+            session.setDeliveryMode(defaultDeliveryMode());
             return session;
         });
     }
@@ -56,6 +72,35 @@ public class StreamQoSService {
             session.markZombieStop();
         }
         session.finalizeSession();
+        persistSession(streamId, session);
+        removeSession(streamId);
+    }
+
+    private void persistSession(long streamId, StreamQoSSession session) {
+        try {
+            LiveStream stream = liveStreamDAO.findById(streamId).orElse(null);
+            if (stream == null) {
+                return;
+            }
+            long minKbps = minIngestKbps();
+            int overallScore = session.overallHealthScore(minKbps);
+            String rootCause = inferRootCause(session);
+            long ended = session.endedAtMs() != null ? session.endedAtMs() : System.currentTimeMillis();
+            List<QoSEventDto> events = session.allEvents().stream().map(StreamQoSService::toDto).toList();
+            qosSessionDAO.save(
+                    stream,
+                    session.startedAtMs(),
+                    session.endedAtMs(),
+                    session.zombieStop(),
+                    overallScore,
+                    rootCause,
+                    ended - session.startedAtMs(),
+                    session.deliveryMode(),
+                    events,
+                    session.viewerSessionDtos());
+        } catch (Exception e) {
+            LOGGER.warn("Failed to persist QoS session for stream {}: {}", streamId, e.getMessage());
+        }
     }
 
     public void removeSession(long streamId) {
@@ -94,7 +139,15 @@ public class StreamQoSService {
         if (session == null) {
             return;
         }
-        FfmpegLogParser.parseLine(line).ifPresent(session::recordEncoder);
+        FfmpegLogParser.parseLine(line).ifPresent(parsed -> {
+            session.recordEncoder(parsed);
+            if ("hls".equals(session.deliveryMode())
+                    && parsed.bitrateKbps() != null
+                    && parsed.bitrateKbps() > 0) {
+                long kbps = Math.round(parsed.bitrateKbps());
+                session.recordIngestSample(kbps, false, kbps < minIngestKbps());
+            }
+        });
     }
 
     public void recordEncodeStarted(long streamId) {
@@ -165,6 +218,14 @@ public class StreamQoSService {
                 s.allEvents().stream().map(StreamQoSService::toDto).collect(Collectors.toList()));
     }
 
+    public List<StreamPostmortemResponse> historyForStream(long streamId) {
+        return qosSessionDAO.findByStreamId(streamId);
+    }
+
+    public List<StreamPostmortemResponse> recentHistory(int limit) {
+        return qosSessionDAO.findRecent(limit);
+    }
+
     public OpsQoSDto globalOps() {
         int activeSessions = sessions.size();
         int viewers = liveRoomHub.totalViewers();
@@ -200,10 +261,11 @@ public class StreamQoSService {
                 s.deliveryReconnectCount(),
                 s.deliveryAbrDownCount(),
                 s.deliveryAbrUpCount(),
-                deliveryMode(),
+                s.deliveryMode(),
                 s.avgPacketLossPct(),
                 s.avgRttMs(),
                 s.avgJitterMs());
+        delivery.setDeliveryHealthScore(s.deliveryHealthScore());
 
         int joins = s.viewerJoinOk() + s.viewerJoinFail();
         double joinSuccess = joins == 0 ? 100.0 : (100.0 * s.viewerJoinOk() / joins);
@@ -243,7 +305,7 @@ public class StreamQoSService {
                 s.viewerSessionDtos());
     }
 
-    private static String inferRootCause(StreamQoSSession s) {
+    static String inferRootCause(StreamQoSSession s) {
         if (s.ingestUnstable() || s.ingestStallCount() > 2) {
             return "ingest";
         }
@@ -267,7 +329,7 @@ public class StreamQoSService {
         return DEFAULT_MIN_INGEST_KBPS;
     }
 
-    private String deliveryMode() {
+    private String defaultDeliveryMode() {
         return configuration.isMediamtxDelivery() ? "webrtc" : "hls";
     }
 }

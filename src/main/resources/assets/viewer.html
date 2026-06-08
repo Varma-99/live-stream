@@ -65,8 +65,18 @@
     let lowKbpsStreak = 0;
     let videoFlowing = false;
     let encodeSwitchInFlight = false;
+    let hlsQosTimer = null;
+    let joinTimestamp = 0;
+    let ttffSent = false;
+    let hlsStallStartedAt = 0;
+    let lastHlsLevel = -1;
+    let watchStartMs = 0;
+    let watchingStreamId = null;
+    let iceRecoveryTimer = null;
 
     const PLAYBACK_TICK_MS = 3000;
+    const WEBRTC_QOS_STATS_MS = 3000;
+    const HLS_QOS_STATS_MS = 8000;
     const ENCODE_SWITCH_RETRY_MS = 1000;
     const ENCODE_SWITCH_MAX_ATTEMPTS = 20;
     const ZERO_KBPS_STREAK_LIMIT = 5;
@@ -118,6 +128,7 @@
       }
       presenceId = null;
       activeStreamId = null;
+      watchingStreamId = null;
       if (couponTimer) clearInterval(couponTimer);
       couponBanner.classList.remove('show');
     }
@@ -172,24 +183,31 @@
       }, 300);
     }
 
-    function startPresence(streamId) {
+    async function startPresence(streamId) {
+      if (activeStreamId === streamId && presenceId) {
+        return;
+      }
       stopPresence();
       activeStreamId = streamId;
-      Presence.join(streamId)
-        .then((data) => {
-          presenceId = data.presenceId;
-          applyRoom(data.room);
-          stopHeartbeat = Presence.startHeartbeat(streamId, presenceId, applyRoom);
-        })
-        .catch((e) => {
-          viewerStat.textContent = '👀 count unavailable';
-          console.warn(e);
-        });
+      try {
+        const data = await Presence.join(streamId);
+        presenceId = data.presenceId;
+        applyRoom(data.room);
+        stopHeartbeat = Presence.startHeartbeat(streamId, presenceId, applyRoom);
+      } catch (e) {
+        viewerStat.textContent = '👀 count unavailable';
+        console.warn(e);
+      }
     }
 
     function stopPlayers() {
+      if (iceRecoveryTimer) { clearTimeout(iceRecoveryTimer); iceRecoveryTimer = null; }
+      if (hlsQosTimer) { clearInterval(hlsQosTimer); hlsQosTimer = null; }
       if (playbackTimer) { clearInterval(playbackTimer); playbackTimer = null; }
       statsSample = null;
+      ttffSent = false;
+      lastHlsLevel = -1;
+      hlsStallStartedAt = 0;
       zeroKbpsStreak = 0;
       videoFlowing = false;
       lastEncodeDegraded = null;
@@ -238,6 +256,9 @@
           }
           if (!canReconnect()) return;
           try {
+            const prevIdx = qualityIndex;
+            const outageStart = Date.now();
+            postViewerEvent('RECONNECT', q.label, label);
             await connectWhep(q.webrtcWhepUrl);
             qualityIndex = targetIndex;
             zeroKbpsStreak = 0;
@@ -248,6 +269,9 @@
             updateQualityBadge(q.label, 0);
             playStatus.textContent = 'Playing (' + q.label + ')';
             lastEncodeDegraded = degraded;
+            if (targetIndex > prevIdx) postViewerEvent('ABR_DOWN', q.label, 'Encode degrade');
+            else if (targetIndex < prevIdx) postViewerEvent('ABR_UP', q.label, 'Encode restore');
+            postViewerEvent('RECOVERED', Date.now() - outageStart, label);
             return;
           } catch (e) {
             if (!isWhepNotReadyError(e) || attempt === ENCODE_SWITCH_MAX_ATTEMPTS - 1) {
@@ -264,16 +288,19 @@
     }
 
     async function reconnectToQuality(index, reason) {
-      if (!canReconnect() || encodeSwitchInFlight) return;
+      if ((!whepPc && !qualities.length) || reconnecting || encodeSwitchInFlight || isPlaybackPaused()) return;
       const now = Date.now();
       if (now - lastReconnectAt < RECONNECT_COOLDOWN_MS) return;
       const target = Math.max(0, Math.min(index, qualities.length - 1));
       const q = qualities[target];
       if (!q) return;
 
+      const prevIndex = qualityIndex;
+      const outageStart = Date.now();
       reconnecting = true;
       lastReconnectAt = now;
       playStatus.textContent = reason + ' — reconnecting…';
+      postViewerEvent('RECONNECT', q.label, reason);
       try {
         await connectWhep(q.webrtcWhepUrl);
         qualityIndex = target;
@@ -283,24 +310,45 @@
         lastVideoBytesGrowthAt = Date.now();
         updateQualityBadge(q.label, 0);
         playStatus.textContent = 'Playing (' + q.label + ')';
+        if (target > prevIndex) {
+          postViewerEvent('ABR_DOWN', q.label, 'Stepped down to ' + q.label);
+        } else if (target < prevIndex) {
+          postViewerEvent('ABR_UP', q.label, 'Stepped up to ' + q.label);
+        }
+        postViewerEvent('RECOVERED', Date.now() - outageStart, 'Playback recovered');
       } catch (e) {
         playStatus.textContent = 'Reconnect failed — retrying…';
         console.warn('reconnect failed', e);
-        if (!isWhepNotReadyError(e) && target < qualities.length - 1) {
+        if (isWhepNotReadyError(e)) {
+          scheduleIceRecovery(reason);
+        } else if (target < qualities.length - 1) {
           reconnecting = false;
           await reconnectToQuality(target + 1, 'Trying lower quality');
+          return;
         } else {
           playStatus.textContent = String(e);
+          postViewerEvent('FATAL', null, String(e));
         }
       } finally {
         reconnecting = false;
       }
     }
 
+    function scheduleIceRecovery(reason) {
+      if (iceRecoveryTimer || !presenceId || isPlaybackPaused()) return;
+      iceRecoveryTimer = setTimeout(() => {
+        iceRecoveryTimer = null;
+        if (!whepPc || reconnecting || encodeSwitchInFlight) return;
+        reconnectToQuality(qualityIndex, reason || 'Auto-recover').catch((e) => console.warn(e));
+      }, 2000);
+    }
+
     async function handlePlaybackStall(reason) {
       if (!canReconnect() || videoFlowing) return;
+      postViewerEvent('STALL', null, reason);
       if (qualityIndex >= qualities.length - 1) {
         playStatus.textContent = 'No video yet — keep broadcaster live; same Wi‑Fi as ' + location.host;
+        scheduleIceRecovery(reason);
         return;
       }
       await reconnectToQuality(qualityIndex + 1, reason);
@@ -341,6 +389,19 @@
       const pc = new RTCPeerConnection({ iceServers: [] });
       whepPc = pc;
       pc.addTransceiver('video', { direction: 'recvonly' });
+      pc.oniceconnectionstatechange = () => {
+        if (pc !== whepPc) return;
+        const st = pc.iceConnectionState;
+        if ((st === 'failed' || st === 'disconnected') && !reconnecting && !encodeSwitchInFlight) {
+          scheduleIceRecovery('ICE ' + st);
+        }
+      };
+      pc.onconnectionstatechange = () => {
+        if (pc !== whepPc) return;
+        if (pc.connectionState === 'failed' && !reconnecting && !encodeSwitchInFlight) {
+          scheduleIceRecovery('Connection failed');
+        }
+      };
       pc.ontrack = (ev) => {
         if (pc !== whepPc) return;
         video.srcObject = ev.streams[0];
@@ -389,39 +450,65 @@
       });
     }
 
-    async function readVideoStats(pc) {
+    async function readWebRtcQos(pc) {
       const reports = await pc.getStats();
       let bytes = 0;
+      let packetsLost = 0;
+      let packetsReceived = 0;
+      let jitterMs = 0;
+      let rttMs = 0;
       reports.forEach((r) => {
         if (r.type === 'inbound-rtp' && r.kind === 'video') {
           bytes += r.bytesReceived || 0;
+          packetsLost += r.packetsLost || 0;
+          packetsReceived += r.packetsReceived || 0;
+          if (r.jitter != null) jitterMs = Math.max(jitterMs, r.jitter * 1000);
+        }
+        if (r.type === 'remote-inbound-rtp' && r.kind === 'video' && r.roundTripTime != null) {
+          rttMs = Math.round(r.roundTripTime * 1000);
+        }
+        if (r.type === 'candidate-pair' && r.nominated && r.currentRoundTripTime != null) {
+          rttMs = Math.round(r.currentRoundTripTime * 1000);
         }
       });
       const now = Date.now();
+      let kbps = 0;
       if (!statsSample) {
         statsSample = { bytes, at: now };
-        return { bytes, kbps: 0 };
+      } else {
+        const deltaBytes = Math.max(0, bytes - statsSample.bytes);
+        const deltaMs = Math.max(1, now - statsSample.at);
+        kbps = Math.round((deltaBytes * 8) / deltaMs);
+        statsSample = { bytes, at: now };
       }
-      const deltaBytes = Math.max(0, bytes - statsSample.bytes);
-      const deltaMs = Math.max(1, now - statsSample.at);
-      statsSample = { bytes, at: now };
-      return { bytes, kbps: Math.round((deltaBytes * 8) / deltaMs) };
+      const totalPkts = packetsLost + packetsReceived;
+      const lossPct = totalPkts > 0 ? (packetsLost / totalPkts) * 100 : 0;
+      return { bytes, kbps, lossPct, rttMs, jitterMs };
+    }
+
+    function beaconWebrtcTtff() {
+      if (ttffSent || !joinTimestamp) return;
+      ttffSent = true;
+      postViewerEvent('TTFF', Date.now() - joinTimestamp, 'WebRTC time to first frame');
     }
 
     async function runPlaybackTick() {
       if (!whepPc || reconnecting || isPlaybackPaused()) return;
 
-      const { bytes, kbps } = await readVideoStats(whepPc);
+      const { bytes, kbps, lossPct, rttMs, jitterMs } = await readWebRtcQos(whepPc);
       const current = qualities[qualityIndex];
       if (!current) return;
 
       updateQualityBadge(current.label, kbps);
+      postViewerStats(current.label, kbps, lossPct, rttMs, jitterMs);
 
       if (bytes > lastVideoBytes) {
         lastVideoBytes = bytes;
         lastVideoBytesGrowthAt = Date.now();
         if (bytes > 0) videoFlowing = true;
       }
+
+      if (videoFlowing) beaconWebrtcTtff();
 
       if (!videoFlowing) {
         const noBytesYet = Date.now() - lastVideoBytesGrowthAt > NO_BYTE_GROWTH_MS;
@@ -486,6 +573,113 @@
       startPlaybackMonitor();
     }
 
+    function hlsLevelLabel(hls, levelIndex) {
+      if (levelIndex < 0 || !hls.levels || !hls.levels[levelIndex]) return 'auto';
+      const lvl = hls.levels[levelIndex];
+      return lvl.height ? lvl.height + 'p' : (lvl.bitrate ? Math.round(lvl.bitrate / 1000) + 'k' : '—');
+    }
+
+    async function postViewerEvent(eventType, detail, message) {
+      if (!activeStreamId || !presenceId) return;
+      try {
+        await fetch('/streams/' + activeStreamId + '/qos/viewer-event', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            presenceId,
+            eventType,
+            message: message || eventType,
+            detail: detail != null ? String(detail) : undefined,
+          }),
+        });
+      } catch (e) {
+        console.warn('viewer-event', e);
+      }
+    }
+
+    async function postViewerStats(qualityLabel, downloadKbps, packetLossPct, rttMs, jitterMs) {
+      if (!activeStreamId || !presenceId) return;
+      try {
+        await fetch('/streams/' + activeStreamId + '/qos/viewer-stats', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            presenceId,
+            qualityLabel: qualityLabel || '720p',
+            packetLossPct: packetLossPct != null ? packetLossPct : 0,
+            rttMs: rttMs != null ? rttMs : 0,
+            jitterMs: jitterMs != null ? jitterMs : 0,
+            downloadKbps: downloadKbps || 0,
+          }),
+        });
+      } catch (e) {
+        console.warn('viewer-stats', e);
+      }
+    }
+
+    function beaconHlsTtff() {
+      if (ttffSent || !joinTimestamp) return;
+      const ttff = Date.now() - joinTimestamp;
+      ttffSent = true;
+      postViewerEvent('TTFF', ttff, 'HLS time to first frame');
+    }
+
+    function setupHlsQos(hls) {
+      hls.on(Hls.Events.FRAG_BUFFERED, (_e, data) => {
+        if (data.frag && data.frag.type === 'main' && !ttffSent) {
+          beaconHlsTtff();
+        }
+        if (hlsStallStartedAt > 0) {
+          const dur = Date.now() - hlsStallStartedAt;
+          hlsStallStartedAt = 0;
+          postViewerEvent('RECOVERED', dur, 'HLS recovered from stall');
+        }
+      });
+
+      hls.on(Hls.Events.ERROR, (_e, data) => {
+        if (!data) return;
+        const stalled = data.details === 'manifestStalled' || data.details === 'bufferStalledError';
+        if (stalled && hlsStallStartedAt === 0) {
+          hlsStallStartedAt = Date.now();
+          postViewerEvent('STALL', null, 'HLS buffer stall');
+        }
+      });
+
+      hls.on(Hls.Events.LEVEL_SWITCHED, (_e, data) => {
+        const newLevel = data.level;
+        if (lastHlsLevel >= 0 && newLevel !== lastHlsLevel) {
+          const label = hlsLevelLabel(hls, newLevel);
+          const type = newLevel < lastHlsLevel ? 'ABR_DOWN' : 'ABR_UP';
+          postViewerEvent(type, label, 'HLS quality ' + type);
+        }
+        lastHlsLevel = newLevel;
+        updateQualityBadge(hlsLevelLabel(hls, newLevel), 0);
+      });
+
+      video.addEventListener('waiting', () => {
+        if (hlsStallStartedAt === 0) {
+          hlsStallStartedAt = Date.now();
+          postViewerEvent('STALL', null, 'Video waiting');
+        }
+      });
+      video.addEventListener('playing', () => {
+        if (hlsStallStartedAt > 0) {
+          const dur = Date.now() - hlsStallStartedAt;
+          hlsStallStartedAt = 0;
+          postViewerEvent('RECOVERED', dur, 'Video resumed');
+        }
+      });
+
+      if (hlsQosTimer) clearInterval(hlsQosTimer);
+      hlsQosTimer = setInterval(() => {
+        if (!hlsInstance) return;
+        const kbps = hls.bandwidthEstimate ? Math.round(hls.bandwidthEstimate / 1000) : 0;
+        const label = hlsLevelLabel(hls, hls.currentLevel);
+        updateQualityBadge(label, kbps);
+        postViewerStats(label, kbps, 0, 0, 0);
+      }, HLS_QOS_STATS_MS);
+    }
+
     function playHls(url) {
       stopPlayers();
       if (Hls.isSupported()) {
@@ -493,8 +687,10 @@
         hlsInstance.loadSource(url);
         hlsInstance.attachMedia(video);
         hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
+        setupHlsQos(hlsInstance);
       } else {
         video.src = url;
+        video.addEventListener('loadeddata', beaconHlsTtff, { once: true });
       }
     }
 
@@ -504,8 +700,19 @@
         playStatus.textContent = 'Pick a live show.';
         return;
       }
+      if (watchingStreamId === stream.id && (whepPc || hlsInstance)) {
+        return;
+      }
       playStatus.textContent = 'Connecting…';
       try {
+        const newSession = activeStreamId !== stream.id || !presenceId;
+        await startPresence(stream.id);
+        if (newSession) {
+          joinTimestamp = Date.now();
+          watchStartMs = joinTimestamp;
+          ttffSent = false;
+        }
+        watchingStreamId = stream.id;
         if (stream.delivery === 'webrtc' && (stream.webrtcWhepUrl || (stream.qualities && stream.qualities.length))) {
           await playWebrtc(stream);
         } else if (stream.playbackUrl) {
@@ -515,11 +722,11 @@
           return;
         }
         playStatus.textContent = 'Playing';
-        startPresence(stream.id);
         setPaused(stream.status === 'PAUSED');
         history.replaceState(null, '', '?stream=' + stream.id);
       } catch (e) {
         playStatus.textContent = String(e);
+        postViewerEvent('FATAL', null, String(e));
       }
     }
 
@@ -528,7 +735,21 @@
     };
     document.getElementById('playBtn').onclick = watch;
     document.getElementById('refreshBtn').onclick = refreshStreams;
-    window.addEventListener('beforeunload', stopPresence);
+    window.addEventListener('beforeunload', () => {
+      if (activeStreamId && presenceId && watchStartMs > 0) {
+        const watchSec = Math.round((Date.now() - watchStartMs) / 1000);
+        navigator.sendBeacon(
+          '/streams/' + activeStreamId + '/qos/viewer-event',
+          new Blob([JSON.stringify({
+            presenceId,
+            eventType: 'WATCH_SEC',
+            detail: String(watchSec),
+            message: 'Watch duration',
+          })], { type: 'application/json' })
+        );
+      }
+      stopPresence();
+    });
 
     refreshStreams().then(() => {
       if (new URLSearchParams(location.search).get('stream')) setTimeout(watch, 400);

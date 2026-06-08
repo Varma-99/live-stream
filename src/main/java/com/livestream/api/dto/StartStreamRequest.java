@@ -3,6 +3,7 @@ package com.livestream.api.dto;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 public class StartStreamRequest {
@@ -15,6 +16,11 @@ public class StartStreamRequest {
     @Size(max = 255)
     @JsonProperty
     private String title;
+
+    /** Optional: {@code hls}, {@code webrtc}, or {@code auto} (global config default). */
+    @Pattern(regexp = "^(?i)(hls|webrtc|auto)$", message = "delivery must be hls, webrtc, or auto")
+    @JsonProperty
+    private String delivery;
 
     public Long getBroadcasterId() {
         return broadcasterId;
@@ -30,5 +36,13 @@ public class StartStreamRequest {
 
     public void setTitle(String title) {
         this.title = title;
+    }
+
+    public String getDelivery() {
+        return delivery;
+    }
+
+    public void setDelivery(String delivery) {
+        this.delivery = delivery;
     }
 }

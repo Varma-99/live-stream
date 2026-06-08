@@ -4,6 +4,7 @@ set -euo pipefail
 BASE_URL="${BASE_URL:-http://127.0.0.1:8080}"
 BROADCASTER_ID="${BROADCASTER_ID:-1}"
 TITLE="${TITLE:-k6 Load Test Stream}"
+DELIVERY="${DELIVERY:-auto}"
 
 existing="$(curl -sf "${BASE_URL}/streams" 2>/dev/null || echo '[]')"
 count="$(echo "$existing" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null || echo 0)"
@@ -20,7 +21,7 @@ fi
 
 resp="$(curl -sf -X POST "${BASE_URL}/streams/start" \
   -H 'Content-Type: application/json' \
-  -d "{\"broadcasterId\":${BROADCASTER_ID},\"title\":\"${TITLE}\"}")"
+  -d "{\"broadcasterId\":${BROADCASTER_ID},\"title\":\"${TITLE}\",\"delivery\":\"${DELIVERY}\"}")"
 
 stream_id="$(echo "$resp" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])" 2>/dev/null || true)"
 if [[ -z "${stream_id}" ]]; then

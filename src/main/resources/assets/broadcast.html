@@ -20,6 +20,13 @@
       <label for="title">Show title</label>
       <input id="title" type="text" value="My live sale">
 
+      <fieldset class="delivery-pick" style="margin:0.75rem 0;border:none;padding:0">
+        <legend class="muted" style="font-size:0.85rem;margin-bottom:0.35rem">Delivery mode</legend>
+        <label><input type="radio" name="delivery" value="webrtc" checked> WebRTC (low latency)</label>
+        <label style="margin-left:1rem"><input type="radio" name="delivery" value="hls"> HLS (compatible)</label>
+        <label style="margin-left:1rem"><input type="radio" name="delivery" value="auto"> Auto (config default)</label>
+      </fieldset>
+
       <div class="actions">
         <button class="btn primary" id="startBtn" type="button">Start show</button>
         <button class="btn" id="pauseBtn" type="button" disabled>Pause</button>
@@ -76,11 +83,12 @@
 
       <div class="qos-row">
         <div class="qos-row-head">
-          <span class="qos-row-title">DELIVERY (WebRTC)</span>
+          <span class="qos-row-title" id="deliveryRowTitle">DELIVERY (WebRTC)</span>
           <span class="qos-row-score" id="deliveryRowScore">—</span>
         </div>
         <div class="metric-grid" id="qosDeliveryGrid"></div>
-        <canvas class="qos-chart" id="chartDelivery" width="900" height="64" aria-label="Packet loss trend"></canvas>
+        <canvas class="qos-chart" id="chartDelivery" width="900" height="64" aria-label="Delivery metric trend"></canvas>
+        <canvas class="qos-chart" id="chartDelStalls" width="900" height="64" style="display:none" aria-label="HLS stall trend"></canvas>
       </div>
 
       <div class="qos-row">
@@ -89,6 +97,16 @@
           <span class="qos-row-score" id="viewerRowScore">—</span>
         </div>
         <div class="metric-grid" id="qosViewersGrid"></div>
+        <canvas class="qos-chart" id="chartViewerCount" width="900" height="64" aria-label="Viewer count trend"></canvas>
+      </div>
+
+      <div class="qos-row">
+        <div class="qos-row-head">
+          <span class="qos-row-title">HEALTH TRENDS</span>
+        </div>
+        <canvas class="qos-chart" id="chartOverall" width="900" height="64" aria-label="Overall health score"></canvas>
+        <canvas class="qos-chart" id="chartIngestScore" width="900" height="64" aria-label="Ingest health score"></canvas>
+        <canvas class="qos-chart" id="chartEncodeScore" width="900" height="64" aria-label="Encode health score"></canvas>
       </div>
 
       <div class="qos-row">
@@ -113,6 +131,7 @@
                 <th>Loss %</th>
                 <th>RTT</th>
                 <th>Stalls</th>
+                <th>ABR</th>
                 <th>TTFF</th>
               </tr>
             </thead>
@@ -128,6 +147,8 @@
         </div>
         <div class="war-pm-col">
           <p class="qos-row-title">POSTMORTEM</p>
+          <label for="historyPick" class="muted" style="font-size:0.8rem">Previous sessions</label>
+          <select id="historyPick" style="margin:0.25rem 0 0.5rem;max-width:100%"><option value="">Current (in memory)</option></select>
           <button class="btn war-btn" type="button" id="postmortemBtn">Refresh analysis</button>
           <pre class="qos-postmortem" id="qosPostmortem"></pre>
         </div>
@@ -176,8 +197,12 @@
     let endingIntentionally = false;
     let publicWebBase = location.origin;
     let stopQosPoll = null;
-    const qosHistory = { ingestKbps: [], encodeFps: [], packetLoss: [], stallRate: [] };
-    const QOS_HISTORY_LEN = 48;
+    const qosHistory = {
+      ingestKbps: [], encodeFps: [], packetLoss: [], stallRate: [],
+      overallHealth: [], viewerCount: [], ingestScore: [], encodeScore: [], delStalls: [],
+    };
+    const QOS_HISTORY_LEN = 120;
+    let currentDeliveryMode = 'webrtc';
 
     const msgEl = document.getElementById('message');
 
@@ -332,17 +357,16 @@
           '<td class="' + lossCls + '">' + loss + '</td>' +
           '<td class="' + rttCls + '">' + (s.rttMs || 0) + '</td>' +
           '<td class="' + stallCls + '">' + (s.stalls || 0) + '</td>' +
+          '<td>' + (s.qualitySwitches || 0) + '</td>' +
           '<td>' + fmtMs(s.ttffMs) + '</td></tr>';
       }).join('');
     }
 
     function deliveryScore(d) {
-      let s = 100;
-      if ((d.reconnectCount || 0) > 0) s -= Math.min(30, d.reconnectCount * 8);
-      if ((d.rebufferCount || 0) > 0) s -= Math.min(25, d.rebufferCount * 10);
-      if ((d.avgPacketLossPct || 0) > 1) s -= Math.min(25, d.avgPacketLossPct * 4);
-      if ((d.avgRttMs || 0) > 150) s -= 15;
-      return Math.max(0, Math.round(s));
+      if (d.deliveryHealthScore != null) {
+        return d.deliveryHealthScore;
+      }
+      return 50;
     }
 
     function renderEvents(events) {
@@ -388,25 +412,41 @@
         const vw = q.viewer || {};
         const ops = q.ops || {};
 
+        currentDeliveryMode = (del.deliveryMode || 'webrtc').toLowerCase();
+        const isHls = currentDeliveryMode === 'hls';
+        document.getElementById('deliveryRowTitle').textContent =
+          'DELIVERY (' + currentDeliveryMode.toUpperCase() + ')';
+
         setRowScore('ingestRowScore', ing.ingestHealthScore);
         setRowScore('encodeRowScore', enc.encodeHealthScore);
         setRowScore('deliveryRowScore', deliveryScore(del));
         setRowScore('viewerRowScore', vw.viewerHealthScore);
 
         const curKbps = ing.currentIngestKbps || 0;
+        const ingestSrc = isHls ? 'FFmpeg output' : 'upload to MediaMTX';
+
         pushHistory('ingestKbps', curKbps);
         pushHistory('encodeFps', enc.fpsActual || 0);
         pushHistory('packetLoss', del.avgPacketLossPct || 0);
         pushHistory('stallRate', vw.stallEventsPerViewerHour || 0);
+        pushHistory('overallHealth', overall);
+        pushHistory('viewerCount', ops.concurrentViewers || 0);
+        pushHistory('ingestScore', ing.ingestHealthScore || 0);
+        pushHistory('encodeScore', enc.encodeHealthScore || 0);
+        pushHistory('delStalls', del.rebufferCount || 0);
 
         fillGrid('qosIngestGrid',
-          metricTile('Now', curKbps + ' kbps', 'upload to MediaMTX', levelByKbps(curKbps)) +
+          metricTile('Now', curKbps + ' kbps', ingestSrc, levelByKbps(curKbps)) +
           metricTile('Avg / P95', (ing.ingestKbpsAvg || 0) + ' / ' + (ing.ingestKbpsP95 || 0), 'kbps', levelByKbps(ing.ingestKbpsAvg || 0)) +
-          metricTile('Stalls', ing.ingestStallCount ?? 0, fmtMs(ing.ingestStallTotalMs) + ' total', levelByCount(ing.ingestStallCount || 0, 1, 3)) +
+          (isHls
+            ? metricTile('Mode', 'HLS disk', 'no RTMP upload', 'good')
+            : metricTile('Stalls', ing.ingestStallCount ?? 0, fmtMs(ing.ingestStallTotalMs) + ' total', levelByCount(ing.ingestStallCount || 0, 1, 3))) +
           metricTile('σ jitter', (ing.ingestKbpsStdDev != null ? ing.ingestKbpsStdDev.toFixed(0) : '0'), 'kbps stddev', 'warn') +
-          metricTile('MTTD', fmtMs(ops.mttdMs), 'detect stall', ops.mttdMs >= 0 ? 'warn' : 'good') +
-          metricTile('MTTR', fmtMs(ops.mttrMs), 'recover ingest', ops.mttrMs >= 0 ? 'good' : 'warn') +
-          (ing.ingestUnstable ? metricTile('Status', 'UNSTABLE', 'check uplink', 'bad') : metricTile('Status', 'OK', 'ingest path', 'good'))
+          (isHls
+            ? metricTile('Status', ing.ingestUnstable ? 'LOW' : 'OK', 'encode bitrate', ing.ingestUnstable ? 'warn' : 'good')
+            : metricTile('MTTD', fmtMs(ops.mttdMs), 'detect stall', ops.mttdMs >= 0 ? 'warn' : 'good') +
+              metricTile('MTTR', fmtMs(ops.mttrMs), 'recover ingest', ops.mttrMs >= 0 ? 'good' : 'warn') +
+              (ing.ingestUnstable ? metricTile('Status', 'UNSTABLE', 'check uplink', 'bad') : metricTile('Status', 'OK', 'ingest path', 'good')))
         );
 
         fillGrid('qosEncodeGrid',
@@ -422,11 +462,14 @@
           metricTile('Mode', (del.deliveryMode || 'webrtc').toUpperCase(), 'playback', 'good') +
           metricTile('TTFF', fmtMs(del.startupTimeMs), 'time to first frame', del.startupTimeMs > 3000 ? 'warn' : 'good') +
           metricTile('Stalls', del.rebufferCount ?? 0, 'rebuffer', levelByCount(del.rebufferCount || 0, 1, 5)) +
-          metricTile('Reconnects', del.reconnectCount ?? 0, 'WHEP', levelByCount(del.reconnectCount || 0, 1, 4)) +
-          metricTile('ABR ↓/↑', (del.abrStepDownCount ?? 0) + '/' + (del.abrStepUpCount ?? 0), 'quality', 'warn') +
-          metricTile('Loss', (del.avgPacketLossPct != null ? del.avgPacketLossPct.toFixed(1) : '0') + '%', 'WebRTC', levelByLoss(del.avgPacketLossPct || 0)) +
-          metricTile('RTT', (del.avgRttMs ?? 0) + ' ms', 'ICE', levelByRtt(del.avgRttMs || 0)) +
-          metricTile('Jitter', (del.avgJitterMs != null ? del.avgJitterMs.toFixed(1) : '0') + ' ms', '', del.avgJitterMs > 30 ? 'warn' : 'good') +
+          metricTile('ABR ↓/↑', (del.abrStepDownCount ?? 0) + '/' + (del.abrStepUpCount ?? 0), 'quality switches', levelByCount((del.abrStepDownCount || 0) + (del.abrStepUpCount || 0), 1, 5)) +
+          (isHls
+            ? metricTile('Bandwidth', 'HTTP', 'segment fetch', 'good') +
+              metricTile('Reconnects', '—', 'N/A for HLS', 'good')
+            : metricTile('Reconnects', del.reconnectCount ?? 0, 'WHEP', levelByCount(del.reconnectCount || 0, 1, 4)) +
+              metricTile('Loss', (del.avgPacketLossPct != null ? del.avgPacketLossPct.toFixed(1) : '0') + '%', 'WebRTC', levelByLoss(del.avgPacketLossPct || 0)) +
+              metricTile('RTT', (del.avgRttMs ?? 0) + ' ms', 'ICE', levelByRtt(del.avgRttMs || 0)) +
+              metricTile('Jitter', (del.avgJitterMs != null ? del.avgJitterMs.toFixed(1) : '0') + ' ms', '', del.avgJitterMs > 30 ? 'warn' : 'good')) +
           metricTile('Del MTTD', fmtMs(ops.deliveryMttdMs), 'detect', 'warn') +
           metricTile('Del MTTR', fmtMs(ops.deliveryMttrMs), 'recover', 'good')
         );
@@ -461,9 +504,34 @@
           max: 35, min: 0, goodY: 28, warnY: 20,
           colorFor: (v) => v >= 28 ? '#66bb6a' : (v >= 20 ? '#ffca28' : '#ef5350'),
         });
-        drawSparkline('chartDelivery', qosHistory.packetLoss, {
-          max: 10, min: 0, warnY: 1, goodY: 0.5,
-          colorFor: (v) => v < 1 ? '#66bb6a' : (v < 5 ? '#ffca28' : '#ef5350'),
+        document.getElementById('chartDelivery').style.display = isHls ? 'none' : 'block';
+        document.getElementById('chartDelStalls').style.display = isHls ? 'block' : 'none';
+        if (isHls) {
+          drawSparkline('chartDelStalls', qosHistory.delStalls, {
+            max: 20, min: 0, warnY: 2, goodY: 0,
+            colorFor: (v) => v < 2 ? '#66bb6a' : (v < 8 ? '#ffca28' : '#ef5350'),
+          });
+        } else {
+          drawSparkline('chartDelivery', qosHistory.packetLoss, {
+            max: 10, min: 0, warnY: 1, goodY: 0.5,
+            colorFor: (v) => v < 1 ? '#66bb6a' : (v < 5 ? '#ffca28' : '#ef5350'),
+          });
+        }
+        drawSparkline('chartViewerCount', qosHistory.viewerCount, {
+          max: Math.max(10, ...qosHistory.viewerCount, 1), min: 0,
+          colorFor: () => '#42a5f5',
+        });
+        drawSparkline('chartOverall', qosHistory.overallHealth, {
+          max: 100, min: 0, goodY: 80, warnY: 55,
+          colorFor: (v) => v >= 80 ? '#66bb6a' : (v >= 55 ? '#ffca28' : '#ef5350'),
+        });
+        drawSparkline('chartIngestScore', qosHistory.ingestScore, {
+          max: 100, min: 0, goodY: 80, warnY: 55,
+          colorFor: (v) => v >= 80 ? '#66bb6a' : (v >= 55 ? '#ffca28' : '#ef5350'),
+        });
+        drawSparkline('chartEncodeScore', qosHistory.encodeScore, {
+          max: 100, min: 0, goodY: 80, warnY: 55,
+          colorFor: (v) => v >= 80 ? '#66bb6a' : (v >= 55 ? '#ffca28' : '#ef5350'),
         });
 
         renderViewerTable(q.viewerSessions);
@@ -477,10 +545,7 @@
 
     function startQosPoll() {
       if (stopQosPoll) clearInterval(stopQosPoll);
-      qosHistory.ingestKbps.length = 0;
-      qosHistory.encodeFps.length = 0;
-      qosHistory.packetLoss.length = 0;
-      qosHistory.stallRate.length = 0;
+      Object.keys(qosHistory).forEach((k) => { qosHistory[k].length = 0; });
       document.getElementById('qosPanel').style.display = 'block';
       document.querySelector('.page').classList.add('war-room-active');
       refreshQos();
@@ -604,6 +669,7 @@
         stopBroadcasterHeartbeat = startBroadcasterHeartbeatSafe(streamId);
         stopPoll = Presence.startBroadcasterPoll(streamId, handleRoomUpdate);
         startQosPoll();
+        loadHistoryOptions();
       } else {
         stopQosPollFn();
         currentStreamId = null;
@@ -642,10 +708,11 @@
         return;
       }
       try {
+        const delivery = document.querySelector('input[name="delivery"]:checked')?.value || 'auto';
         const r = await fetch('/streams/start', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ broadcasterId: 1, title }),
+          body: JSON.stringify({ broadcasterId: 1, title, delivery }),
         });
         const data = await r.json();
         if (!r.ok) {
@@ -653,7 +720,16 @@
           return;
         }
         setLive(true, data.id, data.status);
-        showMessage('Live! Open the watch link in other tabs — each tab counts as a viewer.', true);
+        currentDeliveryMode = (data.delivery || 'webrtc').toLowerCase();
+        const degradeHint = document.getElementById('degradeHint');
+        degradeHint.textContent = currentDeliveryMode === 'hls'
+          ? 'Degrade restarts FFmpeg at lower HLS bitrate (100k / 15fps).'
+          : 'Degrade sends real choppy video to viewers — watch the viewer tab quality line drop.';
+        const mode = data.delivery || 'webrtc';
+        const hint = mode === 'hls'
+          ? ' HLS: ' + (data.playbackUrl || '/hls/' + data.id + '/index.m3u8')
+          : ' WebRTC WHEP via viewer page.';
+        showMessage('Live!' + hint + ' Open watch link on other tabs.', true);
       } catch (e) {
         showMessage(String(e), false);
       }
@@ -792,30 +868,61 @@
       }
     };
 
+    async function loadHistoryOptions() {
+      if (!currentStreamId) return;
+      const sel = document.getElementById('historyPick');
+      try {
+        const list = await fetch('/streams/' + currentStreamId + '/qos/history').then(r => r.json());
+        sel.innerHTML = '<option value="">Current (in memory)</option>';
+        (list || []).forEach((pm, i) => {
+          const o = document.createElement('option');
+          o.value = String(i);
+          const dur = pm.durationMs != null ? Math.round(pm.durationMs / 1000) + 's' : '?';
+          o.textContent = '#' + (i + 1) + ' — ' + dur + ' — ' + (pm.rootCause || 'none');
+          o.dataset.json = JSON.stringify(pm);
+          sel.appendChild(o);
+        });
+      } catch (e) {
+        console.warn('history load', e);
+      }
+    }
+
+    function renderPostmortem(pm, el) {
+      const lines = [
+        'Root cause: ' + (pm.rootCause || '—'),
+        'Duration: ' + (pm.durationMs != null ? Math.round(pm.durationMs / 1000) + 's' : '—'),
+        'Zombie stop: ' + (pm.zombieStop ? 'yes' : 'no'),
+        'Overall score: ' + (pm.summary ? pm.summary.overallHealthScore : '—'),
+        '',
+        '--- timeline ---',
+      ];
+      (pm.timeline || []).forEach(ev => {
+        lines.push((ev.stage || '') + ' | ' + (ev.type || '') + ' | ' + (ev.message || ''));
+      });
+      el.textContent = lines.join('\n');
+    }
+
     document.getElementById('postmortemBtn').onclick = async () => {
       if (!currentStreamId) return;
       const el = document.getElementById('qosPostmortem');
       el.textContent = 'Loading…';
       try {
-        const pm = await fetch('/streams/' + currentStreamId + '/postmortem').then(r => r.json());
-        const lines = [
-          'Root cause: ' + (pm.rootCause || '—'),
-          'Duration: ' + (pm.durationMs != null ? Math.round(pm.durationMs / 1000) + 's' : '—'),
-          'Zombie stop: ' + (pm.zombieStop ? 'yes' : 'no'),
-          'Overall score: ' + (pm.summary ? pm.summary.overallHealthScore : '—'),
-          '',
-          '--- timeline ---',
-        ];
-        (pm.timeline || []).forEach(ev => {
-          lines.push((ev.stage || '') + ' | ' + (ev.type || '') + ' | ' + (ev.message || ''));
-        });
-        el.textContent = lines.join('\n');
+        const histIdx = document.getElementById('historyPick').value;
+        let pm;
+        if (histIdx !== '') {
+          const opt = document.getElementById('historyPick').selectedOptions[0];
+          pm = JSON.parse(opt.dataset.json);
+        } else {
+          pm = await fetch('/streams/' + currentStreamId + '/postmortem').then(r => r.json());
+        }
+        renderPostmortem(pm, el);
       } catch (e) {
         el.textContent = String(e);
       }
     };
 
     refreshLive();
+    setInterval(() => { if (currentStreamId) loadHistoryOptions(); }, 15000);
     loadPublicConfig();
   </script>
 </body>

@@ -28,4 +28,24 @@ public class QoSEventDto {
         this.message = message;
         this.detail = detail;
     }
+
+    public long getAtEpochMs() {
+        return atEpochMs;
+    }
+
+    public String getStage() {
+        return stage;
+    }
+
+    public String getType() {
+        return type;
+    }
+
+    public String getMessage() {
+        return message;
+    }
+
+    public String getDetail() {
+        return detail;
+    }
 }

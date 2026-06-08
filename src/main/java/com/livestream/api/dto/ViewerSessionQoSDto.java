@@ -64,4 +64,44 @@ public class ViewerSessionQoSDto {
         this.jitterMs = jitterMs;
         this.downloadKbps = downloadKbps;
     }
+
+    public String getPresenceId() {
+        return presenceId;
+    }
+
+    public String getQualityLabel() {
+        return qualityLabel;
+    }
+
+    public long getWatchMs() {
+        return watchMs;
+    }
+
+    public long getTtffMs() {
+        return ttffMs;
+    }
+
+    public int getStalls() {
+        return stalls;
+    }
+
+    public int getQualitySwitches() {
+        return qualitySwitches;
+    }
+
+    public double getPacketLossPct() {
+        return packetLossPct;
+    }
+
+    public long getRttMs() {
+        return rttMs;
+    }
+
+    public double getJitterMs() {
+        return jitterMs;
+    }
+
+    public long getDownloadKbps() {
+        return downloadKbps;
+    }
 }

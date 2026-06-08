@@ -43,7 +43,8 @@ public class StreamResource {
     @Path("/start")
     @UnitOfWork
     public StreamResponse startStream(@Valid StartStreamRequest request) {
-        return streamService.startStream(request.getBroadcasterId(), request.getTitle());
+        return streamService.startStream(
+                request.getBroadcasterId(), request.getTitle(), request.getDelivery());
     }
 
     @POST

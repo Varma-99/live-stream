@@ -4,8 +4,9 @@ import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import com.livestream.LiveStreamConfiguration;
 import com.livestream.model.LiveStream;
-import com.livestream.qos.StreamQoSService;
 import com.livestream.model.StreamStatus;
+import com.livestream.qos.StreamQoSService;
+import com.livestream.service.VideoService;
 import io.dropwizard.lifecycle.Managed;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -31,6 +32,7 @@ public class IngestHealthService implements Managed {
     private final SessionFactory sessionFactory;
     private final MediamtxApiClient mediamtxApiClient;
     private final StreamQoSService streamQoSService;
+    private final VideoService videoService;
 
     private final ConcurrentHashMap<Long, IngestSnapshot> snapshots = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Long, PathSample> lastSamples = new ConcurrentHashMap<>();
@@ -43,11 +45,13 @@ public class IngestHealthService implements Managed {
             LiveStreamConfiguration configuration,
             SessionFactory sessionFactory,
             MediamtxApiClient mediamtxApiClient,
-            StreamQoSService streamQoSService) {
+            StreamQoSService streamQoSService,
+            VideoService videoService) {
         this.configuration = configuration;
         this.sessionFactory = sessionFactory;
         this.mediamtxApiClient = mediamtxApiClient;
         this.streamQoSService = streamQoSService;
+        this.videoService = videoService;
     }
 
     public IngestSnapshot snapshot(long streamId) {
@@ -124,6 +128,11 @@ public class IngestHealthService implements Managed {
                         .getResultList();
 
                 for (LiveStream stream : streams) {
+                    if (!videoService.isMediamtxDelivery(stream)) {
+                        snapshots.remove(stream.getId());
+                        lastSamples.remove(stream.getId());
+                        continue;
+                    }
                     evaluateStream(stream, pathBytes, now);
                 }
             }

@@ -32,6 +32,9 @@ public class ViewerDeliveryQoSDto {
     @JsonProperty
     private double avgJitterMs;
 
+    @JsonProperty
+    private int deliveryHealthScore;
+
     public ViewerDeliveryQoSDto() {}
 
     public ViewerDeliveryQoSDto(
@@ -63,5 +66,13 @@ public class ViewerDeliveryQoSDto {
         this.avgPacketLossPct = avgPacketLossPct;
         this.avgRttMs = avgRttMs;
         this.avgJitterMs = avgJitterMs;
+    }
+
+    public void setDeliveryHealthScore(int deliveryHealthScore) {
+        this.deliveryHealthScore = deliveryHealthScore;
+    }
+
+    public int getDeliveryHealthScore() {
+        return deliveryHealthScore;
     }
 }

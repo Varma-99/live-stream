@@ -2,6 +2,7 @@ package com.livestream;
 
 import com.google.inject.AbstractModule;
 import com.livestream.dao.LiveStreamDAO;
+import com.livestream.dao.QoSSessionDAO;
 import com.livestream.dao.UserDAO;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.livestream.mediamtx.IngestHealthService;
@@ -39,6 +40,7 @@ public class LiveStreamModule extends AbstractModule {
         bind(ObjectMapper.class).toInstance(objectMapper);
         bind(UserDAO.class);
         bind(LiveStreamDAO.class);
+        bind(QoSSessionDAO.class);
         bind(StreamService.class);
         bind(VideoService.class);
         bind(DevDataSeeder.class);

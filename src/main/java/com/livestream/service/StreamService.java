@@ -67,7 +67,7 @@ public class StreamService {
                 .toList();
     }
 
-    public StreamResponse startStream(Long broadcasterId, String title) {
+    public StreamResponse startStream(Long broadcasterId, String title, String delivery) {
         User broadcaster = userDAO.findById(broadcasterId)
                 .orElseThrow(() -> new IllegalArgumentException("Broadcaster not found: " + broadcasterId));
 
@@ -91,6 +91,7 @@ public class StreamService {
         stream.setStatus(StreamStatus.LIVE);
         stream.setViewCount(0L);
         stream.setStartedAt(Instant.now());
+        stream.setDelivery(normalizeStoredDelivery(delivery));
 
         LiveStream saved = liveStreamDAO.create(stream);
         try {
@@ -99,7 +100,7 @@ public class StreamService {
             throw new IllegalStateException("Failed to start video engine: " + e.getMessage(), e);
         }
         broadcasterControlService.onStreamStarted(saved.getId());
-        streamQoSService.beginSession(saved.getId());
+        streamQoSService.beginSession(saved.getId(), videoService.resolveDelivery(saved));
         StreamResponse response = StreamResponse.from(saved);
         videoService.applyPlaybackUrls(response, saved);
         return response;
@@ -279,5 +280,13 @@ public class StreamService {
         byte[] bytes = new byte[24];
         SECURE_RANDOM.nextBytes(bytes);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    }
+
+    /** {@code auto} or blank → null (global default); otherwise {@code hls} or {@code webrtc}. */
+    private static String normalizeStoredDelivery(String delivery) {
+        if (delivery == null || delivery.isBlank() || "auto".equalsIgnoreCase(delivery)) {
+            return null;
+        }
+        return delivery.trim().toLowerCase();
     }
 }

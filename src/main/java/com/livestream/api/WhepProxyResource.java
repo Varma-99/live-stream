@@ -42,9 +42,10 @@ public class WhepProxyResource {
     @Consumes("application/sdp")
     @Produces("application/sdp")
     public Response postWhep(@PathParam("path") String path, String offerSdp, @Context HttpHeaders inbound) {
-        if (!configuration.isMediamtxDelivery()) {
+        if (configuration.getMediamtxWebrtcBase() == null
+                || configuration.getMediamtxWebrtcBase().isBlank()) {
             return Response.status(Response.Status.SERVICE_UNAVAILABLE)
-                    .entity("MediaMTX delivery is not enabled")
+                    .entity("MediaMTX WebRTC is not configured")
                     .build();
         }
         String target = mediamtxBase() + "/" + path;

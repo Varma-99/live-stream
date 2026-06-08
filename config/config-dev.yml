@@ -33,7 +33,7 @@ database:
   validationQuery: "SELECT 1"
   initialSize: 1
   minSize: 1
-  maxSize: 32
+  maxSize: 128
 
 ffmpegPath: /opt/homebrew/bin/ffmpeg
 hlsOutputDir: ./data/hls
@@ -46,7 +46,7 @@ rtmpPort: 1935
 # Method A (LAN): set YOUR_MAC_LAN_IP in publicWebBase + mediamtx.yml webrtcAdditionalHosts (ipconfig getifaddr en0).
 # mediamtxWebrtcBase stays http://127.0.0.1:8889 — the app proxies WHEP on :8080 to localhost MediaMTX.
 # Find IP: ipconfig getifaddr en0  (Wi-Fi) — must match on every device that watches.
-publicWebBase: http://10.255.51.106:8080
+publicWebBase: http://10.255.51.42:8080
 
 # Delivery: mediamtx = FFmpeg → RTMP → MediaMTX → WebRTC (low latency). hls = file-based HLS.
 streamDelivery: mediamtx

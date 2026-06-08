@@ -47,6 +47,10 @@ public class LiveStream {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 
+    /** Per-stream delivery: {@code hls}, {@code webrtc}, or null (use global config default). */
+    @Column(length = 16)
+    private String delivery;
+
     public LiveStream() {
     }
 
@@ -120,5 +124,13 @@ public class LiveStream {
 
     public void setCreatedAt(Instant createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public String getDelivery() {
+        return delivery;
+    }
+
+    public void setDelivery(String delivery) {
+        this.delivery = delivery;
     }
 }

@@ -210,4 +210,4 @@ Install srs-bench (once):
 
 - k6 load test: `load-test/README.md`, branch `k6`
 - QoS war room: `http://127.0.0.1:8080/ui/broadcast.html`
-- LAN viewers: `http://10.255.51.106:8080/ui/viewer.html?stream=2`
+- LAN viewers: `http://10.255.51.42:8080/ui/viewer.html?stream=2`

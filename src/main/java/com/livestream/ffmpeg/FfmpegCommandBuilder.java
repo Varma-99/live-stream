@@ -34,6 +34,93 @@ public final class FfmpegCommandBuilder {
     private FfmpegCommandBuilder() {
     }
 
+    /** HLS at reduced bitrate for degrade demo. */
+    public static List<String> testPatternToHlsDegraded(String ffmpegPath, Path outputDir) {
+        List<String> command = new ArrayList<>();
+        command.add(ffmpegPath);
+        command.add("-y");
+        command.add("-f");
+        command.add("lavfi");
+        command.add("-i");
+        command.add("testsrc=size=640x360:rate=15");
+        command.add("-f");
+        command.add("lavfi");
+        command.add("-i");
+        command.add("sine=frequency=440:sample_rate=44100");
+        command.add("-c:v");
+        command.add("libx264");
+        command.add("-preset");
+        command.add("veryfast");
+        command.add("-pix_fmt");
+        command.add("yuv420p");
+        command.add("-b:v");
+        command.add(DEGRADED_VIDEO_BITRATE);
+        command.add("-g");
+        command.add(GOP_FRAMES_DEGRADED);
+        command.add("-c:a");
+        command.add("aac");
+        command.add("-b:a");
+        command.add("64k");
+        appendHlsOutput(command, outputDir);
+        return command;
+    }
+
+    public static List<String> avfoundationCameraToHlsDegraded(String ffmpegPath, Path outputDir, String device) {
+        List<String> command = new ArrayList<>();
+        command.add(ffmpegPath);
+        command.add("-y");
+        command.add("-f");
+        command.add("avfoundation");
+        command.add("-framerate");
+        command.add("15");
+        command.add("-video_size");
+        command.add("640x360");
+        command.add("-i");
+        command.add(device);
+        command.add("-c:v");
+        command.add("libx264");
+        command.add("-preset");
+        command.add("veryfast");
+        command.add("-pix_fmt");
+        command.add("yuv420p");
+        command.add("-b:v");
+        command.add(DEGRADED_VIDEO_BITRATE);
+        command.add("-g");
+        command.add(GOP_FRAMES_DEGRADED);
+        command.add("-c:a");
+        command.add("aac");
+        command.add("-b:a");
+        command.add("64k");
+        appendHlsOutput(command, outputDir);
+        return command;
+    }
+
+    public static List<String> rtmpListenToHlsDegraded(
+            String ffmpegPath, Path outputDir, int rtmpPort, String streamKey) {
+        String input = "rtmp://127.0.0.1:" + rtmpPort + "/live/" + streamKey;
+        List<String> command = new ArrayList<>();
+        command.add(ffmpegPath);
+        command.add("-y");
+        command.add("-listen");
+        command.add("1");
+        command.add("-i");
+        command.add(input);
+        command.add("-c:v");
+        command.add("libx264");
+        command.add("-preset");
+        command.add("veryfast");
+        command.add("-pix_fmt");
+        command.add("yuv420p");
+        command.add("-b:v");
+        command.add(DEGRADED_VIDEO_BITRATE);
+        command.add("-g");
+        command.add(GOP_FRAMES_DEGRADED);
+        command.add("-c:a");
+        command.add("aac");
+        appendHlsOutput(command, outputDir);
+        return command;
+    }
+
     /** Synthetic test pattern (no camera). */
     public static List<String> testPatternToHls(String ffmpegPath, Path outputDir) {
         List<String> command = new ArrayList<>();

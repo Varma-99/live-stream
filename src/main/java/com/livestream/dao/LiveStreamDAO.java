@@ -64,6 +64,16 @@ public class LiveStreamDAO extends AbstractDAO<LiveStream> {
         return count > 0;
     }
 
+    public List<LiveStream> findByStatusAndDelivery(StreamStatus status, String delivery) {
+        return currentSession()
+                .createQuery(
+                        "FROM LiveStream s JOIN FETCH s.broadcaster WHERE s.status = :status AND s.delivery = :delivery ORDER BY s.startedAt DESC",
+                        LiveStream.class)
+                .setParameter("status", status)
+                .setParameter("delivery", delivery)
+                .getResultList();
+    }
+
     public long countBroadcasting() {
         Long count = currentSession()
                 .createQuery("SELECT COUNT(s) FROM LiveStream s WHERE s.status IN :statuses", Long.class)

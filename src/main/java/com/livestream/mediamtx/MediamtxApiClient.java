@@ -33,7 +33,9 @@ public class MediamtxApiClient {
     }
 
     public boolean isEnabled() {
-        return configuration.isMediamtxDelivery() && configuration.isMediamtxApiEnabled();
+        return configuration.isMediamtxApiEnabled()
+                && configuration.getMediamtxApiBase() != null
+                && !configuration.getMediamtxApiBase().isBlank();
     }
 
     /** Path name → bytes received (uses inboundBytes or bytesReceived). */

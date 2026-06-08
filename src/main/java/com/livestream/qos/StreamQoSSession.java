@@ -60,16 +60,31 @@ final class StreamQoSSession {
 
     private final AtomicInteger viewerJoinOk = new AtomicInteger(0);
     private final AtomicInteger viewerJoinFail = new AtomicInteger(0);
+    /** Successful joins; never decremented — stable denominator for per-viewer rates. */
+    private final AtomicInteger totalViewerSessions = new AtomicInteger(0);
+    /** Sessions with at least one fatal; incremented once per presenceId. */
+    private final AtomicInteger viewerSessionsWithFatal = new AtomicInteger(0);
     private final AtomicInteger viewerFatalCount = new AtomicInteger(0);
     private final AtomicLong viewerWatchMsTotal = new AtomicLong(0);
 
     private volatile boolean zombieStop;
     private volatile boolean finalized;
     private volatile Long endedAtMs;
+    private volatile String deliveryMode = "webrtc";
 
     StreamQoSSession(long streamId) {
         this.streamId = streamId;
         this.startedAtMs = System.currentTimeMillis();
+    }
+
+    void setDeliveryMode(String mode) {
+        if (mode != null && !mode.isBlank()) {
+            this.deliveryMode = mode;
+        }
+    }
+
+    String deliveryMode() {
+        return deliveryMode;
     }
 
     long streamId() {
@@ -185,12 +200,17 @@ final class StreamQoSSession {
     void recordViewerEvent(String presenceId, QoSEventType type, String message, String detail) {
         ViewerSessionState vs = presenceId != null ? viewerSession(presenceId) : null;
         switch (type) {
-            case VIEWER_JOIN_OK -> viewerJoinOk.incrementAndGet();
+            case VIEWER_JOIN_OK -> {
+                viewerJoinOk.incrementAndGet();
+                totalViewerSessions.incrementAndGet();
+            }
             case VIEWER_JOIN_FAIL -> viewerJoinFail.incrementAndGet();
             case VIEWER_FATAL -> {
                 viewerFatalCount.incrementAndGet();
                 if (vs != null) {
-                    vs.fatalCount.incrementAndGet();
+                    if (vs.fatalCount.getAndIncrement() == 0) {
+                        viewerSessionsWithFatal.incrementAndGet();
+                    }
                 }
             }
             case VIEWER_TTFF -> {
@@ -316,7 +336,8 @@ final class StreamQoSSession {
     int ingestHealthScore(long minKbps) {
         int score = 100;
         if (ingestKbpsWindow.count() == 0 && currentIngestKbps == 0) {
-            return 50;
+            // HLS ingest samples come from FFmpeg bitrate lines; until then ingest is unknown, not encode.
+            return "hls".equals(deliveryMode) ? 100 : 50;
         }
         long avg = ingestKbpsWindow.average();
         if (avg < minKbps) {
@@ -346,24 +367,124 @@ final class StreamQoSSession {
         return Math.max(0, Math.min(100, score));
     }
 
+    /** Pipe/infrastructure health: reconnects, ABR, WebRTC network stats — not viewer UX (stalls, TTFF, fatals). */
+    int deliveryHealthScore() {
+        int score = 100;
+        double avgSwitches = avgQualitySwitchesPerViewerSession();
+        double reconnectsPerViewer = perViewerRate(deliveryReconnectCount.get());
+
+        score -= ratePenalty(avgSwitches, 1.0, 8.0, 12);
+        score -= ratePenalty(reconnectsPerViewer, 0.3, 2.0, 18);
+
+        if (!"hls".equals(deliveryMode)) {
+            score -= ratePenalty(avgPacketLossPct(), 0.5, 6.0, 18);
+            score -= ratePenalty(avgRttMs(), 80, 250, 12);
+        }
+
+        return clampScore(score);
+    }
+
+    /** Audience experience: joins, stalls, fatals, startup time. */
     int viewerHealthScore() {
         int joins = viewerJoinOk.get() + viewerJoinFail.get();
-        if (joins == 0) {
+        if (viewers.isEmpty() && joins == 0) {
             return 100;
         }
+
         int score = 100;
-        double failRate = (double) viewerJoinFail.get() / joins;
-        score -= (int) (failRate * 40);
-        score -= Math.min(30, deliveryStallCount.get() * 3);
-        score -= Math.min(20, viewerFatalCount.get() * 10);
-        return Math.max(0, Math.min(100, score));
+        double joinSuccessPct = joinSuccessPct();
+        double failPct = joins > 0 ? 100.0 * viewerJoinFail.get() / joins : 0;
+        double avgStalls = avgStallsPerViewerSession();
+        double fatalPct = fatalViewerSessionPct();
+
+        score -= ratePenalty(failPct, 0.5, 10.0, 40);
+        score -= ratePenalty(avgStalls, 0.5, 4.0, 25);
+        score -= ratePenalty(fatalPct, 0.5, 8.0, 30);
+        score -= ttffPenalty(avgStartupMs());
+
+        score = applyExperienceFloor(score, joinSuccessPct, fatalPct);
+        return clampScore(score);
     }
 
     int overallHealthScore(long minIngestKbps) {
         int ingest = ingestHealthScore(minIngestKbps);
         int encode = encodeHealthScore();
+        int delivery = deliveryHealthScore();
         int viewer = viewerHealthScore();
-        return (ingest * 45 + encode * 30 + viewer * 25) / 100;
+        if ("hls".equals(deliveryMode)) {
+            return (ingest * 30 + encode * 30 + delivery * 25 + viewer * 15) / 100;
+        }
+        return (ingest * 35 + encode * 25 + delivery * 25 + viewer * 15) / 100;
+    }
+
+    private double joinSuccessPct() {
+        int joins = viewerJoinOk.get() + viewerJoinFail.get();
+        if (joins == 0) {
+            return 100.0;
+        }
+        return 100.0 * viewerJoinOk.get() / joins;
+    }
+
+    private double perViewerRate(int totalEvents) {
+        int sessions = Math.max(1, viewerJoinOk.get() + viewerJoinFail.get());
+        return (double) totalEvents / sessions;
+    }
+
+    private double avgStallsPerViewerSession() {
+        int sessions = Math.max(1, totalViewerSessions.get());
+        return (double) deliveryStallCount.get() / sessions;
+    }
+
+    private double avgQualitySwitchesPerViewerSession() {
+        int sessions = Math.max(1, totalViewerSessions.get());
+        return (double) (deliveryAbrDownCount.get() + deliveryAbrUpCount.get()) / sessions;
+    }
+
+    private double fatalViewerSessionPct() {
+        int sessions = Math.max(1, totalViewerSessions.get());
+        return 100.0 * viewerSessionsWithFatal.get() / sessions;
+    }
+
+    private static int ratePenalty(double value, double okBelow, double badAbove, int maxPenalty) {
+        if (value <= okBelow) {
+            return 0;
+        }
+        if (value >= badAbove) {
+            return maxPenalty;
+        }
+        return (int) Math.round((value - okBelow) / (badAbove - okBelow) * maxPenalty);
+    }
+
+    private static int ttffPenalty(long avgTtffMs) {
+        if (avgTtffMs <= 0) {
+            return 0;
+        }
+        if (avgTtffMs > 6000) {
+            return 18;
+        }
+        if (avgTtffMs > 3500) {
+            return 10;
+        }
+        if (avgTtffMs > 2000) {
+            return 5;
+        }
+        return 0;
+    }
+
+    /** Keep scores realistic under load: high join success + no fatals ≠ total outage. */
+    private static int applyExperienceFloor(int score, double joinSuccessPct, double fatalPct) {
+        if (joinSuccessPct >= 99.0 && fatalPct < 1.0) {
+            score = Math.max(score, 55);
+        } else if (joinSuccessPct >= 95.0 && fatalPct < 3.0) {
+            score = Math.max(score, 40);
+        } else if (joinSuccessPct >= 90.0) {
+            score = Math.max(score, 25);
+        }
+        return score;
+    }
+
+    private static int clampScore(int score) {
+        return Math.max(0, Math.min(100, score));
     }
 
     long ingestKbpsAvg() {
@@ -559,8 +680,10 @@ final class StreamQoSSession {
             switch (type) {
                 case DELIVERY_ABR_STEP_DOWN, DELIVERY_ABR_STEP_UP -> {
                     qualitySwitchCount.incrementAndGet();
-                    if (detail != null && detail.contains("to ")) {
-                        qualityLabel = detail.substring(detail.indexOf("to ") + 3).trim();
+                    if (detail != null && !detail.isBlank()) {
+                        qualityLabel = detail.contains("to ")
+                                ? detail.substring(detail.indexOf("to ") + 3).trim()
+                                : detail.trim();
                     }
                 }
                 case VIEWER_STALL, DELIVERY_STALL -> stallCount.incrementAndGet();

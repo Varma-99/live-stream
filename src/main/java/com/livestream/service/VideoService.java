@@ -43,8 +43,21 @@ public class VideoService implements Managed {
         return configuration.isMediamtxDelivery();
     }
 
-    public boolean isAbrEnabled() {
-        return isMediamtxDelivery() && configuration.isAbrEnabled();
+    /** Resolved delivery for a stream: {@code webrtc} or {@code hls}. */
+    public String resolveDelivery(LiveStream stream) {
+        String stored = stream.getDelivery();
+        if (stored == null || stored.isBlank() || "auto".equalsIgnoreCase(stored)) {
+            return configuration.isMediamtxDelivery() ? "webrtc" : "hls";
+        }
+        return stored.trim().toLowerCase(Locale.ROOT);
+    }
+
+    public boolean isMediamtxDelivery(LiveStream stream) {
+        return "webrtc".equals(resolveDelivery(stream));
+    }
+
+    public boolean isAbrEnabled(LiveStream stream) {
+        return isMediamtxDelivery(stream) && configuration.isAbrEnabled();
     }
 
     public boolean isDegraded(long streamId) {
@@ -56,14 +69,16 @@ public class VideoService implements Managed {
     }
 
     public void degradeStream(LiveStream stream) throws IOException {
-        if (!isAbrEnabled()) {
-            throw new IllegalStateException("Degrade demo requires MediaMTX ABR (abrEnabled: true)");
+        if (isMediamtxDelivery(stream)) {
+            if (!isAbrEnabled(stream)) {
+                throw new IllegalStateException("Degrade demo requires MediaMTX ABR (abrEnabled: true)");
+            }
         }
         restartFfmpeg(stream, true);
     }
 
     public void restoreStreamQuality(LiveStream stream) throws IOException {
-        if (!isAbrEnabled()) {
+        if (isMediamtxDelivery(stream) && !isAbrEnabled(stream)) {
             throw new IllegalStateException("Restore requires MediaMTX ABR (abrEnabled: true)");
         }
         restartFfmpeg(stream, false);
@@ -93,7 +108,7 @@ public class VideoService implements Managed {
         }
 
         Path outputDir = Paths.get(configuration.getHlsOutputDir()).resolve(String.valueOf(streamId));
-        if (!isMediamtxDelivery()) {
+        if (!isMediamtxDelivery(stream)) {
             Files.createDirectories(outputDir);
         }
 
@@ -115,12 +130,12 @@ public class VideoService implements Managed {
                 "FFmpeg started for stream {} (pid={}, delivery={}, abr={}, degraded={}, input={})",
                 streamId,
                 process.pid(),
-                configuration.getStreamDelivery(),
-                isAbrEnabled(),
+                resolveDelivery(stream),
+                isAbrEnabled(stream),
                 degraded,
                 resolveInputMode());
-        if (isMediamtxDelivery()) {
-            if (isAbrEnabled()) {
+        if (isMediamtxDelivery(stream)) {
+            if (isAbrEnabled(stream)) {
                 String key = stream.getStreamKey();
                 LOGGER.info(
                         "MediaMTX ABR RTMP: high={}, mid={}, low={}",
@@ -142,9 +157,9 @@ public class VideoService implements Managed {
 
     private List<String> buildFfmpegCommand(
             String ffmpegPath, Path outputDir, LiveStream stream, boolean degraded) {
-        if (isMediamtxDelivery()) {
+        if (isMediamtxDelivery(stream)) {
             String streamKey = stream.getStreamKey();
-            if (isAbrEnabled()) {
+            if (isAbrEnabled(stream)) {
                 String high = rtmpPublishUrl(streamKey, "_high");
                 String mid = rtmpPublishUrl(streamKey, "_mid");
                 String low = rtmpPublishUrl(streamKey, "_low");
@@ -180,12 +195,20 @@ public class VideoService implements Managed {
                     throw new IllegalStateException(
                             "videoInput=camera is only supported on macOS (AVFoundation). Use videoInput: test");
                 }
-                yield FfmpegCommandBuilder.avfoundationCameraToHls(
-                        ffmpegPath, outputDir, configuration.getCameraDevice());
+                yield degraded
+                        ? FfmpegCommandBuilder.avfoundationCameraToHlsDegraded(
+                                ffmpegPath, outputDir, configuration.getCameraDevice())
+                        : FfmpegCommandBuilder.avfoundationCameraToHls(
+                                ffmpegPath, outputDir, configuration.getCameraDevice());
             }
-            case "rtmp" -> FfmpegCommandBuilder.rtmpListenToHls(
-                    ffmpegPath, outputDir, configuration.getRtmpPort(), stream.getStreamKey());
-            default -> FfmpegCommandBuilder.testPatternToHls(ffmpegPath, outputDir);
+            case "rtmp" -> degraded
+                    ? FfmpegCommandBuilder.rtmpListenToHlsDegraded(
+                            ffmpegPath, outputDir, configuration.getRtmpPort(), stream.getStreamKey())
+                    : FfmpegCommandBuilder.rtmpListenToHls(
+                            ffmpegPath, outputDir, configuration.getRtmpPort(), stream.getStreamKey());
+            default -> degraded
+                    ? FfmpegCommandBuilder.testPatternToHlsDegraded(ffmpegPath, outputDir)
+                    : FfmpegCommandBuilder.testPatternToHls(ffmpegPath, outputDir);
         };
     }
 
@@ -199,11 +222,12 @@ public class VideoService implements Managed {
         return "/whep/live/" + streamKey + suffix + "/whep";
     }
 
-    public List<QualityOption> qualityOptions(String streamKey) {
-        if (!isMediamtxDelivery()) {
-            return List.of();
+    public List<QualityOption> qualityOptions(LiveStream stream) {
+        if (!isMediamtxDelivery(stream)) {
+            return List.of(new QualityOption("hls", "720p", null, 1500));
         }
-        if (!isAbrEnabled()) {
+        String streamKey = stream.getStreamKey();
+        if (!isAbrEnabled(stream)) {
             return List.of(new QualityOption("high", "720p", whepPlaybackUrl(streamKey, ""), 800));
         }
         List<QualityOption> options = new ArrayList<>();
@@ -219,8 +243,9 @@ public class VideoService implements Managed {
 
     /** Sets API playback fields on the response (HLS path or WebRTC WHEP URL). */
     public void applyPlaybackUrls(com.livestream.api.dto.StreamResponse response, LiveStream stream) {
-        if (isMediamtxDelivery()) {
-            List<QualityOption> qualities = qualityOptions(stream.getStreamKey());
+        String delivery = resolveDelivery(stream);
+        if (isMediamtxDelivery(stream)) {
+            List<QualityOption> qualities = qualityOptions(stream);
             response.setDelivery("webrtc");
             response.setQualities(qualities);
             response.setWebrtcWhepUrl(qualities.isEmpty() ? null : qualities.get(0).getWebrtcWhepUrl());
@@ -229,7 +254,7 @@ public class VideoService implements Managed {
             response.setDelivery("hls");
             response.setPlaybackUrl(hlsPlaybackUrl(stream.getId()));
             response.setWebrtcWhepUrl(null);
-            response.setQualities(null);
+            response.setQualities(qualityOptions(stream));
         }
         response.setEncodeDegraded(isDegraded(stream.getId()));
     }

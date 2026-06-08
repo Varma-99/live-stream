@@ -8,6 +8,9 @@
  *   TARGET_VUS=200     peak virtual viewers (default 200)
  *   STREAM_ID=1        optional; auto-picks live stream if unset
  *   BASE_URL=...       default http://127.0.0.1:8080
+ *   RAMP_UP_SEC=60     ramp-up duration
+ *   HOLD_SEC=90        hold at peak VUs
+ *   RAMP_DOWN_SEC=40   ramp-down duration
  */
 
 import http from 'k6/http';
@@ -17,6 +20,9 @@ import { Rate, Trend } from 'k6/metrics';
 const BASE_URL = __ENV.BASE_URL || 'http://127.0.0.1:8080';
 const STREAM_ID_ENV = __ENV.STREAM_ID || '';
 const TARGET_VUS = parseInt(__ENV.TARGET_VUS || '200', 10);
+const RAMP_UP_SEC = parseInt(__ENV.RAMP_UP_SEC || '60', 10);
+const HOLD_SEC = parseInt(__ENV.HOLD_SEC || '90', 10);
+const RAMP_DOWN_SEC = parseInt(__ENV.RAMP_DOWN_SEC || '40', 10);
 const HEARTBEAT_ROUNDS = parseInt(__ENV.HEARTBEAT_ROUNDS || '20', 10);
 const HEARTBEAT_INTERVAL_SEC = parseFloat(__ENV.HEARTBEAT_INTERVAL_SEC || '2');
 const LIKE_CHANCE = parseFloat(__ENV.LIKE_CHANCE || '0.08');
@@ -46,9 +52,9 @@ export const options = {
       executor: 'ramping-vus',
       startVUs: 0,
       stages: [
-        { duration: '60s', target: TARGET_VUS },
-        { duration: '90s', target: TARGET_VUS },
-        { duration: '40s', target: 0 },
+        { duration: RAMP_UP_SEC + 's', target: TARGET_VUS },
+        { duration: HOLD_SEC + 's', target: TARGET_VUS },
+        { duration: RAMP_DOWN_SEC + 's', target: 0 },
       ],
       gracefulRampDown: '30s',
     },

@@ -15,6 +15,9 @@ import com.livestream.realtime.BroadcasterControlService;
 import com.livestream.service.VideoService;
 import com.livestream.web.HlsAssetServlet;
 import com.livestream.model.LiveStream;
+import com.livestream.model.QoSEventRecord;
+import com.livestream.model.QoSSessionRecord;
+import com.livestream.model.QoSViewerSessionRecord;
 import com.livestream.model.User;
 import io.dropwizard.assets.AssetsBundle;
 import io.dropwizard.core.Application;
@@ -35,7 +38,12 @@ public class LiveStreamApplication extends Application<LiveStreamConfiguration> 
     private static final Logger LOGGER = LoggerFactory.getLogger(LiveStreamApplication.class);
 
     private final HibernateBundle<LiveStreamConfiguration> hibernateBundle =
-            new HibernateBundle<LiveStreamConfiguration>(User.class, LiveStream.class) {
+            new HibernateBundle<LiveStreamConfiguration>(
+                    User.class,
+                    LiveStream.class,
+                    QoSSessionRecord.class,
+                    QoSEventRecord.class,
+                    QoSViewerSessionRecord.class) {
                 @Override
                 public DataSourceFactory getDataSourceFactory(LiveStreamConfiguration configuration) {
                     return configuration.getDataSourceFactory();
