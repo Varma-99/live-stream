@@ -1,0 +1,28 @@
+# MediaMTX — minimal config for live-stream (RTMP ingest + WebRTC playback only)
+# Run: ./scripts/start-mediamtx.sh
+
+logLevel: info
+
+api: yes
+apiAddress: :9997
+
+# Only what we use (disables RTSP :8554/:8000, HLS :8888, SRT :8890)
+rtsp: no
+srt: no
+hls: no
+hlsAddress: ""
+
+rtmp: yes
+rtmpAddress: :1935
+
+webrtc: yes
+webrtcAddress: :8889
+
+# Method A: LAN host for phones on Wi-Fi + localhost for Mac streamer
+webrtcAdditionalHosts: [127.0.0.1, localhost, 10.255.59.104]
+webrtcAllowOrigin: "*"
+webrtcSTUNGatherTimeout: 1s
+webrtcTrackGatherTimeout: 1s
+
+paths:
+  all_others:

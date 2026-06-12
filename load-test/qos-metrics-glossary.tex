@@ -1,0 +1,107 @@
+% QoS metric glossary — paste into Overleaf or: pdflatex qos-metrics-glossary.tex
+\documentclass[10pt,a4paper]{article}
+\usepackage[margin=0.9in]{geometry}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+
+\title{\textbf{QoS Metrics Glossary}\\[0.2em]\large Live-Stream Sandbox --- Why Each Stat Exists}
+\author{}
+\date{}
+
+\newcommand{\metric}[2]{\item[\texttt{#1}] #2}
+
+\begin{document}
+\maketitle
+\noindent One-line rationale for each field exposed by \texttt{/streams/\{id\}/qos} and postmortem APIs.
+
+\section*{Overall}
+\begin{description}[style=nextline, leftmargin=2.6cm, labelwidth=2.4cm]
+  \metric{overallHealthScore}{Weighted 0--100 rollup of ingest, encode, delivery, and viewer pillars for at-a-glance stream health.}
+\end{description}
+
+\section*{Ingest (upload path → SRS/MediaMTX)}
+\begin{description}[style=nextline, leftmargin=2.6cm, labelwidth=2.4cm]
+  \metric{currentIngestKbps}{Instant upload bitrate; detects drops caused by network, CPU, or publisher loss.}
+  \metric{ingestKbpsAvg}{Session-average bitrate; baseline for whether the broadcaster sustains expected quality.}
+  \metric{ingestKbpsP95}{95th-percentile bitrate; ignores brief dips while catching sustained under-upload.}
+  \metric{ingestKbpsStdDev}{Bitrate volatility; high values mean unstable uplink even if average looks fine.}
+  \metric{ingestStallCount}{Number of periods with near-zero ingest; flags complete upload interruptions.}
+  \metric{ingestStallTotalMs}{Total time spent stalled; quantifies how long viewers may see frozen/black video at source.}
+  \metric{ingestRecoveryCount}{How often ingest came back after a stall; measures resilience of the upload path.}
+  \metric{ingestRecoveryTotalMs}{Time to recover from stalls; long values mean slow return to live after network blips.}
+  \metric{ingestUnstable}{Boolean flag when bitrate stays below threshold; drives broadcaster UI warnings.}
+  \metric{ingestHealthScore}{0--100 ingest sub-score derived from bitrate stability and stall/recovery history.}
+\end{description}
+
+\section*{Encode (FFmpeg / camera pipeline)}
+\begin{description}[style=nextline, leftmargin=2.6cm, labelwidth=2.4cm]
+  \metric{fpsActual}{Measured output frame rate; drops indicate encoder overload or deliberate degrade.}
+  \metric{targetFps}{Configured goal (e.g.\ 30 fps); reference for comparing \texttt{fpsActual}.}
+  \metric{encodeSpeedRatio}{Encode speed vs.\ realtime ($1.0 =$ keeping up); $<1$ means falling behind and buffering risk.}
+  \metric{droppedFrames}{Frames discarded by encoder; early sign of CPU/GPU saturation.}
+  \metric{duplicatedFrames}{Repeated frames inserted to maintain timing; signals encoder cannot produce real frames.}
+  \metric{encodeRestartCount}{FFmpeg restart events; repeated restarts mean fragile encode or config changes (degrade/restore).}
+  \metric{encodeErrorCount}{Hard encoder failures; separates crashes from gradual slowdown.}
+  \metric{encodeHealthScore}{0--100 encode sub-score from FPS, drops, restarts, and errors.}
+\end{description}
+
+\section*{Delivery (WebRTC / HLS playback path)}
+\begin{description}[style=nextline, leftmargin=2.6cm, labelwidth=2.4cm]
+  \metric{deliveryMode}{Active playback technology (\texttt{webrtc}, \texttt{hls}, etc.); context for interpreting RTT/loss metrics.}
+  \metric{startupTimeMs}{Time to first frame (TTFF) at delivery layer; viewer-perceived join latency.}
+  \metric{rebufferCount}{Playback stalls after start; core QoE metric for smoothness.}
+  \metric{reconnectCount}{ICE/WebRTC or session reconnects; indicates network or media-server instability.}
+  \metric{abrStepDownCount}{Times quality was lowered; shows adaptive response to bandwidth constraints.}
+  \metric{abrStepUpCount}{Times quality was raised; confirms recovery when bandwidth improves.}
+  \metric{avgPacketLossPct}{Mean RTP packet loss across viewers; primary WebRTC quality indicator.}
+  \metric{avgRttMs}{Mean round-trip time; high RTT adds latency and hurts interactive live UX.}
+  \metric{avgJitterMs}{Timing variation in packet arrival; jitter causes stutter even at low loss.}
+  \metric{deliveryHealthScore}{0--100 delivery sub-score from stalls, reconnects, ABR churn, loss, RTT, and jitter.}
+\end{description}
+
+\section*{Viewer (aggregate audience QoE)}
+\begin{description}[style=nextline, leftmargin=2.6cm, labelwidth=2.4cm]
+  \metric{joinSuccessRate}{\% of join attempts that succeeded; catches API overload or stream-not-live errors.}
+  \metric{timeToPlayMs}{Aggregate TTFF after join; complements delivery \texttt{startupTimeMs}.}
+  \metric{totalWatchMs}{Sum of watch time; scales stall rates and validates load-test duration.}
+  \metric{stallEventsPerViewerHour}{Normalized stall rate; comparable across different viewer counts and run lengths.}
+  \metric{qualitySwitchCount}{Total ABR changes seen by viewers; high churn = unstable download bandwidth.}
+  \metric{fatalPlaybackErrors}{Unrecoverable playback failures; hard failures beyond brief stalls.}
+  \metric{viewerHealthScore}{0--100 viewer sub-score from join rate, TTFF, stalls, fatals, and quality switches.}
+\end{description}
+
+\section*{Ops (session \& platform)}
+\begin{description}[style=nextline, leftmargin=2.6cm, labelwidth=2.4cm]
+  \metric{activeStreams}{Count of live sessions in the app; sanity check during load tests.}
+  \metric{concurrentViewers}{Present viewers from presence heartbeats; correlates with k6/API load.}
+  \metric{activeStreamIds}{Which stream IDs are live; debugging multi-tenant or accidental stop.}
+  \metric{mttdMs}{Mean time to \emph{detect} an ingest/encode incident (ops alerting latency).}
+  \metric{mttrMs}{Mean time to \emph{recover} after ingest/encode incident (ops repair latency).}
+  \metric{deliveryMttdMs}{Detection latency for delivery-side faults (stalls, ICE failures).}
+  \metric{deliveryMttrMs}{Recovery latency for delivery-side faults.}
+  \metric{zombieStop}{\texttt{true} if stream ended due to missing broadcaster heartbeat ($>$15\,s); explains unexpected \emph{ENDED} status.}
+\end{description}
+
+\section*{Per-viewer session (\texttt{viewerSessions[]})}
+\begin{description}[style=nextline, leftmargin=2.6cm, labelwidth=2.4cm]
+  \metric{presenceId}{Anonymous viewer session id; ties heartbeats, stats, and events to one tab.}
+  \metric{qualityLabel}{Active rung (e.g.\ 720p); validates ABR selection under load.}
+  \metric{watchMs}{How long this viewer watched; weights per-session metrics.}
+  \metric{ttffMs}{This viewer's time-to-first-frame; spots outliers hidden by averages.}
+  \metric{stalls}{Stall count for one viewer; drill-down from aggregate \texttt{rebufferCount}.}
+  \metric{fatals}{Fatal errors for one viewer; drill-down from \texttt{fatalPlaybackErrors}.}
+  \metric{qualitySwitches}{ABR changes for one viewer; identifies who suffered unstable bandwidth.}
+  \metric{packetLossPct / rttMs / jitterMs}{WebRTC transport stats reported by the viewer client.}
+  \metric{downloadKbps}{Receive bitrate at the client; confirms sufficient bandwidth for chosen quality.}
+\end{description}
+
+\section*{Events \& postmortem}
+\begin{description}[style=nextline, leftmargin=2.6cm, labelwidth=2.4cm]
+  \metric{recentEvents[]}{Timestamped timeline (INGEST, ENCODE, DELIVERY, VIEWER, OPS); explains \emph{why} scores changed.}
+  \metric{durationMs (postmortem)}{Total stream lifetime; context for averages and incident counts.}
+  \metric{rootCause (postmortem)}{Best-effort classification after stream ends; speeds post-incident review.}
+  \metric{timeline[] (postmortem)}{Full event history for the session; used in war-room and load-test reports.}
+\end{description}
+
+\end{document}

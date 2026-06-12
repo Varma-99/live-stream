@@ -1,0 +1,4 @@
+# Example RTMP publish URLs for Test 3 (use unique paths; do not reuse app stream key).
+rtmp://127.0.0.1:1935/live/bench1_high
+rtmp://127.0.0.1:1935/live/bench2_high
+rtmp://127.0.0.1:1935/live/bench3_high

@@ -1,0 +1,19 @@
+# SRS media server (standalone — not started with main docker-compose.yml)
+# Usage: ./scripts/start-srs.sh
+
+services:
+  srs:
+    image: ossrs/srs:6
+    container_name: srs
+    ports:
+      - "1935:1935"
+      - "1985:1985"
+      - "8088:8080"
+      - "8000:8000/udp"
+      - "10080:10080/udp"
+    environment:
+      CANDIDATE: ${SRS_CANDIDATE:-127.0.0.1}
+    volumes:
+      - ./srs.conf:/usr/local/srs/conf/srs.conf:ro
+    command: ["./objs/srs", "-c", "conf/srs.conf"]
+    restart: unless-stopped

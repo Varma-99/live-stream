@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Go live — LiveMart</title>
+  <link rel="stylesheet" href="/ui/common.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="logo" href="/ui/">LiveMart</a>
+    <span class="live-dot" id="liveDot" style="display:none">● LIVE</span>
+  </header>
+
+  <div class="page">
+    <div class="card">
+      <h1>Streamer</h1>
+      <p class="muted">Video is captured by FFmpeg on this computer (not this browser). Closing this tab ends the stream after ~15 seconds unless you click <strong>End show</strong>.</p>
+
+      <label for="title">Show title</label>
+      <input id="title" type="text" value="My live sale">
+
+      <fieldset class="delivery-pick" style="margin:0.75rem 0;border:none;padding:0">
+        <legend class="muted" style="font-size:0.85rem;margin-bottom:0.35rem">Delivery mode</legend>
+        <label><input type="radio" name="delivery" value="webrtc" checked> WebRTC (low latency)</label>
+        <label style="margin-left:1rem"><input type="radio" name="delivery" value="hls"> HLS (compatible)</label>
+        <label style="margin-left:1rem"><input type="radio" name="delivery" value="auto"> Auto (config default)</label>
+      </fieldset>
+
+      <div class="actions">
+        <button class="btn primary" id="startBtn" type="button">Start show</button>
+        <button class="btn" id="pauseBtn" type="button" disabled>Pause</button>
+        <button class="btn" id="resumeBtn" type="button" disabled style="display:none">Resume</button>
+        <button class="btn danger" id="stopBtn" type="button" disabled>End show</button>
+      </div>
+      <div id="message"></div>
+
+      <p class="stat" id="viewerStat" style="display:none">👀 0 watching</p>
+      <p class="ingest-warn" id="ingestWarn" style="display:none" role="alert"></p>
+      <div class="actions" id="demoPanel" style="display:none">
+        <button class="btn" type="button" id="degradeBtn" title="Restart FFmpeg at 100k / 5fps on all ABR paths">Degrade stream (demo)</button>
+        <button class="btn primary" type="button" id="restoreBtn" style="display:none" title="Restart FFmpeg at normal ABR quality">Restore quality</button>
+        <button class="btn" type="button" id="ingestDemoBtn" title="Dev only: fake low upload for streamer banner">Simulate upload warning (demo)</button>
+      </div>
+      <p class="muted" id="degradeHint" style="display:none;margin-top:0.5rem">Degrade sends real choppy video to viewers — watch the viewer tab quality line drop.</p>
+      <p class="links" id="watchLinks" style="display:none">
+        Watch on Wi-Fi (phone / other device):<br>
+        <a id="watchLinkLan" href="#" target="_blank">LAN watch link</a><br>
+        <span class="muted">On this Mac only: <a id="watchLinkLocal" href="#" target="_blank">localhost link</a></span>
+      </p>
+    </div>
+
+    <div class="card qos-war-room" id="qosPanel" style="display:none">
+      <div class="war-header">
+        <div>
+          <h2 class="war-title">Live operations · QoS war room</h2>
+          <p class="war-sub">Ingest → Encode → Delivery → Viewers · updates every 3s</p>
+        </div>
+        <div class="war-overall-ring" id="qosOverallRing" data-level="warn">—</div>
+        <div class="war-status-col">
+          <span class="war-badge" id="warStatusBadge">INITIALIZING</span>
+          <span class="war-live-meta" id="warLiveMeta">—</span>
+        </div>
+      </div>
+
+      <div class="qos-row">
+        <div class="qos-row-head">
+          <span class="qos-row-title">INGEST</span>
+          <span class="qos-row-score" id="ingestRowScore">—</span>
+        </div>
+        <div class="metric-grid" id="qosIngestGrid"></div>
+        <canvas class="qos-chart" id="chartIngest" width="900" height="64" aria-label="Ingest bitrate trend"></canvas>
+      </div>
+
+      <div class="qos-row">
+        <div class="qos-row-head">
+          <span class="qos-row-title">ENCODE</span>
+          <span class="qos-row-score" id="encodeRowScore">—</span>
+        </div>
+        <div class="metric-grid" id="qosEncodeGrid"></div>
+        <canvas class="qos-chart" id="chartEncode" width="900" height="64" aria-label="Encode FPS trend"></canvas>
+      </div>
+
+      <div class="qos-row">
+        <div class="qos-row-head">
+          <span class="qos-row-title" id="deliveryRowTitle">DELIVERY (WebRTC)</span>
+          <span class="qos-row-score" id="deliveryRowScore">—</span>
+        </div>
+        <div class="metric-grid" id="qosDeliveryGrid"></div>
+        <canvas class="qos-chart" id="chartDelivery" width="900" height="64" aria-label="Delivery metric trend"></canvas>
+        <canvas class="qos-chart" id="chartDelStalls" width="900" height="64" style="display:none" aria-label="HLS stall trend"></canvas>
+      </div>
+
+      <div class="qos-row">
+        <div class="qos-row-head">
+          <span class="qos-row-title">VIEWERS (aggregate)</span>
+          <span class="qos-row-score" id="viewerRowScore">—</span>
+        </div>
+        <div class="metric-grid" id="qosViewersGrid"></div>
+        <canvas class="qos-chart" id="chartViewerCount" width="900" height="64" aria-label="Viewer count trend"></canvas>
+      </div>
+
+      <div class="qos-row">
+        <div class="qos-row-head">
+          <span class="qos-row-title">HEALTH TRENDS</span>
+        </div>
+        <canvas class="qos-chart" id="chartOverall" width="900" height="64" aria-label="Overall health score"></canvas>
+        <canvas class="qos-chart" id="chartIngestScore" width="900" height="64" aria-label="Ingest health score"></canvas>
+        <canvas class="qos-chart" id="chartEncodeScore" width="900" height="64" aria-label="Encode health score"></canvas>
+      </div>
+
+      <div class="qos-row">
+        <div class="qos-row-head">
+          <span class="qos-row-title">OPS</span>
+        </div>
+        <div class="metric-grid" id="qosOpsGrid"></div>
+      </div>
+
+      <div class="qos-row">
+        <div class="qos-row-head">
+          <span class="qos-row-title">PER VIEWER</span>
+        </div>
+        <div class="qos-table-wrap">
+          <p class="war-empty" id="qosViewerEmpty">No viewer sessions yet</p>
+          <table class="qos-table" id="qosViewerTable" style="display:none">
+            <thead>
+              <tr>
+                <th>Session</th>
+                <th>Quality</th>
+                <th>↓ kbps</th>
+                <th>Loss %</th>
+                <th>RTT</th>
+                <th>Stalls</th>
+                <th>ABR</th>
+                <th>TTFF</th>
+              </tr>
+            </thead>
+            <tbody id="qosViewerBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="war-footer">
+        <div class="war-events-col">
+          <p class="qos-row-title">EVENT TIMELINE</p>
+          <ul class="qos-events" id="qosEvents"></ul>
+        </div>
+        <div class="war-pm-col">
+          <p class="qos-row-title">POSTMORTEM</p>
+          <label for="historyPick" class="muted" style="font-size:0.8rem">Previous sessions</label>
+          <select id="historyPick" style="margin:0.25rem 0 0.5rem;max-width:100%"><option value="">Current (in memory)</option></select>
+          <button class="btn war-btn" type="button" id="postmortemBtn">Refresh analysis</button>
+          <pre class="qos-postmortem" id="qosPostmortem"></pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="card coupon-box" id="couponPanel" style="display:none">
+      <h2>Drop coupon for viewers</h2>
+      <div class="row">
+        <div>
+          <label for="percentOff">Discount %</label>
+          <select id="percentOff">
+            <option value="10">10%</option>
+            <option value="15">15%</option>
+            <option value="20" selected>20%</option>
+            <option value="25">25%</option>
+            <option value="30">30%</option>
+          </select>
+        </div>
+        <div>
+          <label for="durationSec">Show for</label>
+          <select id="durationSec">
+            <option value="30">30 seconds</option>
+            <option value="60" selected>1 minute</option>
+            <option value="120">2 minutes</option>
+            <option value="300">5 minutes</option>
+          </select>
+        </div>
+        <div>
+          <label for="couponCode">Coupon code</label>
+          <input id="couponCode" type="text" value="LIVE20" maxlength="32">
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn primary" type="button" id="dropCouponBtn">Send coupon to all viewers</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/ui/presence.js?v=3"></script>
+  <script>
+    let currentStreamId = null;
+    let streamStatus = null;
+    let stopPoll = null;
+    let stopBroadcasterHeartbeat = null;
+    let endingIntentionally = false;
+    let publicWebBase = location.origin;
+    let stopQosPoll = null;
+    const qosHistory = {
+      ingestKbps: [], encodeFps: [], packetLoss: [], stallRate: [],
+      overallHealth: [], viewerCount: [], ingestScore: [], encodeScore: [], delStalls: [],
+    };
+    const QOS_HISTORY_LEN = 120;
+    let currentDeliveryMode = 'webrtc';
+
+    const msgEl = document.getElementById('message');
+
+    function fmtMs(v) {
+      if (v == null || v < 0) return '—';
+      return Math.round(v) + ' ms';
+    }
+
+    function healthLevel(score) {
+      const s = Number(score);
+      if (Number.isNaN(s)) return 'warn';
+      if (s >= 80) return 'good';
+      if (s >= 55) return 'warn';
+      return 'bad';
+    }
+
+    function levelByKbps(kbps) {
+      if (kbps >= 1500) return 'good';
+      if (kbps >= 600) return 'warn';
+      return 'bad';
+    }
+
+    function levelBySpeed(ratio) {
+      if (ratio >= 0.95) return 'good';
+      if (ratio >= 0.7) return 'warn';
+      return 'bad';
+    }
+
+    function levelByLoss(pct) {
+      if (pct < 1) return 'good';
+      if (pct < 5) return 'warn';
+      return 'bad';
+    }
+
+    function levelByRtt(ms) {
+      if (ms < 100) return 'good';
+      if (ms < 250) return 'warn';
+      return 'bad';
+    }
+
+    function levelByCount(n, warnAt, badAt) {
+      if (n <= 0) return 'good';
+      if (n < badAt) return 'warn';
+      return 'bad';
+    }
+
+    function pushHistory(key, value) {
+      const arr = qosHistory[key];
+      arr.push(value);
+      if (arr.length > QOS_HISTORY_LEN) arr.shift();
+    }
+
+    function metricTile(label, value, sub, level) {
+      return '<div class="metric-tile ' + (level || 'warn') + '">' +
+        '<span class="metric-label">' + label + '</span>' +
+        '<span class="metric-value">' + value + '</span>' +
+        (sub ? '<span class="metric-sub">' + sub + '</span>' : '') +
+        '</div>';
+    }
+
+    function fillGrid(id, html) {
+      document.getElementById(id).innerHTML = html;
+    }
+
+    function setRowScore(elId, score) {
+      const el = document.getElementById(elId);
+      el.textContent = (score ?? '—') + '/100';
+      el.className = 'qos-row-score ' + healthLevel(score);
+    }
+
+    function drawSparkline(canvasId, series, opts) {
+      const canvas = document.getElementById(canvasId);
+      if (!canvas || !series.length) return;
+      const dpr = window.devicePixelRatio || 1;
+      const w = canvas.clientWidth || 900;
+      const h = canvas.clientHeight || 64;
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+      ctx.clearRect(0, 0, w, h);
+
+      const max = opts.max || Math.max(...series, 1);
+      const min = opts.min != null ? opts.min : 0;
+      const range = Math.max(max - min, 1);
+      const pad = 6;
+
+      if (opts.warnY != null) {
+        const yW = h - pad - ((opts.warnY - min) / range) * (h - pad * 2);
+        ctx.fillStyle = 'rgba(255, 193, 7, 0.12)';
+        ctx.fillRect(0, yW, w, h - yW);
+      }
+      if (opts.goodY != null) {
+        const yG = h - pad - ((opts.goodY - min) / range) * (h - pad * 2);
+        ctx.fillStyle = 'rgba(76, 175, 80, 0.1)';
+        ctx.fillRect(0, yG, w, yG - pad);
+      }
+
+      ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+      ctx.lineWidth = 1;
+      for (let i = 0; i < 4; i++) {
+        const y = pad + (i / 3) * (h - pad * 2);
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(w, y);
+        ctx.stroke();
+      }
+
+      const last = series[series.length - 1];
+      const lineColor = opts.colorFor ? opts.colorFor(last) : '#4fc3f7';
+      ctx.beginPath();
+      series.forEach((v, i) => {
+        const x = pad + (i / Math.max(series.length - 1, 1)) * (w - pad * 2);
+        const y = h - pad - ((v - min) / range) * (h - pad * 2);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.strokeStyle = lineColor;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.fillStyle = lineColor;
+      const lx = w - pad;
+      const ly = h - pad - ((last - min) / range) * (h - pad * 2);
+      ctx.beginPath();
+      ctx.arc(lx, ly, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function renderViewerTable(sessions) {
+      const empty = document.getElementById('qosViewerEmpty');
+      const table = document.getElementById('qosViewerTable');
+      const body = document.getElementById('qosViewerBody');
+      if (!sessions || sessions.length === 0) {
+        empty.style.display = 'block';
+        table.style.display = 'none';
+        body.innerHTML = '';
+        return;
+      }
+      empty.style.display = 'none';
+      table.style.display = 'table';
+      body.innerHTML = sessions.map(s => {
+        const pid = (s.presenceId || '').slice(0, 8);
+        const loss = s.packetLossPct != null ? s.packetLossPct.toFixed(1) : '0';
+        const lossCls = levelByLoss(Number(loss));
+        const rttCls = levelByRtt(s.rttMs || 0);
+        const stallCls = levelByCount(s.stalls || 0, 1, 3);
+        return '<tr>' +
+          '<td title="' + (s.presenceId || '') + '">' + pid + '…</td>' +
+          '<td>' + (s.qualityLabel || '—') + '</td>' +
+          '<td class="' + levelByKbps(s.downloadKbps || 0) + '">' + (s.downloadKbps || 0) + '</td>' +
+          '<td class="' + lossCls + '">' + loss + '</td>' +
+          '<td class="' + rttCls + '">' + (s.rttMs || 0) + '</td>' +
+          '<td class="' + stallCls + '">' + (s.stalls || 0) + '</td>' +
+          '<td>' + (s.qualitySwitches || 0) + '</td>' +
+          '<td>' + fmtMs(s.ttffMs) + '</td></tr>';
+      }).join('');
+    }
+
+    function deliveryScore(d) {
+      if (d.deliveryHealthScore != null) {
+        return d.deliveryHealthScore;
+      }
+      return 50;
+    }
+
+    function renderEvents(events) {
+      const ul = document.getElementById('qosEvents');
+      ul.innerHTML = '';
+      (events || []).slice(-16).reverse().forEach(ev => {
+        const li = document.createElement('li');
+        const stage = (ev.stage || '').toLowerCase();
+        const type = (ev.type || '').toLowerCase();
+        let lvl = 'info';
+        if (type.includes('stall') || type.includes('unstable') || type.includes('error') || type.includes('fatal')) lvl = 'bad';
+        else if (type.includes('reconnect') || type.includes('degraded') || type.includes('zombie')) lvl = 'warn';
+        else if (type.includes('recover') || type.includes('restored') || type.includes('join')) lvl = 'good';
+        li.className = 'ev-' + lvl;
+        li.innerHTML = '<span class="ev-stage">' + stage + '</span> ' +
+          '<span class="ev-type">' + type + '</span> — ' + (ev.message || '');
+        ul.appendChild(li);
+      });
+    }
+
+    async function refreshQos() {
+      if (!currentStreamId) return;
+      try {
+        const q = await fetch('/streams/' + currentStreamId + '/qos').then(r => {
+          if (!r.ok) throw new Error('QoS ' + r.status);
+          return r.json();
+        });
+
+        const overall = q.overallHealthScore ?? 0;
+        const ring = document.getElementById('qosOverallRing');
+        ring.textContent = overall;
+        ring.dataset.level = healthLevel(overall);
+        ring.className = 'war-overall-ring ' + healthLevel(overall);
+
+        const badge = document.getElementById('warStatusBadge');
+        const lvl = healthLevel(overall);
+        badge.className = 'war-badge ' + lvl;
+        badge.textContent = lvl === 'good' ? 'HEALTHY' : (lvl === 'warn' ? 'DEGRADED' : 'CRITICAL');
+
+        const ing = q.ingest || {};
+        const enc = q.encode || {};
+        const del = q.delivery || {};
+        const vw = q.viewer || {};
+        const ops = q.ops || {};
+
+        currentDeliveryMode = (del.deliveryMode || 'webrtc').toLowerCase();
+        const isHls = currentDeliveryMode === 'hls';
+        document.getElementById('deliveryRowTitle').textContent =
+          'DELIVERY (' + currentDeliveryMode.toUpperCase() + ')';
+
+        setRowScore('ingestRowScore', ing.ingestHealthScore);
+        setRowScore('encodeRowScore', enc.encodeHealthScore);
+        setRowScore('deliveryRowScore', deliveryScore(del));
+        setRowScore('viewerRowScore', vw.viewerHealthScore);
+
+        const curKbps = ing.currentIngestKbps || 0;
+        const ingestSrc = isHls ? 'FFmpeg output' : 'RTMP ingest';
+
+        pushHistory('ingestKbps', curKbps);
+        pushHistory('encodeFps', enc.fpsActual || 0);
+        pushHistory('packetLoss', del.avgPacketLossPct || 0);
+        pushHistory('stallRate', vw.stallEventsPerViewerHour || 0);
+        pushHistory('overallHealth', overall);
+        pushHistory('viewerCount', ops.concurrentViewers || 0);
+        pushHistory('ingestScore', ing.ingestHealthScore || 0);
+        pushHistory('encodeScore', enc.encodeHealthScore || 0);
+        pushHistory('delStalls', del.rebufferCount || 0);
+
+        fillGrid('qosIngestGrid',
+          metricTile('Now', curKbps + ' kbps', ingestSrc, levelByKbps(curKbps)) +
+          metricTile('Avg / P95', (ing.ingestKbpsAvg || 0) + ' / ' + (ing.ingestKbpsP95 || 0), 'kbps', levelByKbps(ing.ingestKbpsAvg || 0)) +
+          (isHls
+            ? metricTile('Mode', 'HLS disk', 'no RTMP upload', 'good')
+            : metricTile('Stalls', ing.ingestStallCount ?? 0, fmtMs(ing.ingestStallTotalMs) + ' total', levelByCount(ing.ingestStallCount || 0, 1, 3))) +
+          metricTile('σ jitter', (ing.ingestKbpsStdDev != null ? ing.ingestKbpsStdDev.toFixed(0) : '0'), 'kbps stddev', 'warn') +
+          (isHls
+            ? metricTile('Status', ing.ingestUnstable ? 'LOW' : 'OK', 'encode bitrate', ing.ingestUnstable ? 'warn' : 'good')
+            : metricTile('MTTD', fmtMs(ops.mttdMs), 'detect stall', ops.mttdMs >= 0 ? 'warn' : 'good') +
+              metricTile('MTTR', fmtMs(ops.mttrMs), 'recover ingest', ops.mttrMs >= 0 ? 'good' : 'warn') +
+              (ing.ingestUnstable ? metricTile('Status', 'UNSTABLE', 'check uplink', 'bad') : metricTile('Status', 'OK', 'ingest path', 'good')))
+        );
+
+        fillGrid('qosEncodeGrid',
+          metricTile('FPS', (enc.fpsActual != null ? enc.fpsActual.toFixed(1) : '—'), 'target ' + (enc.targetFps || 30), levelBySpeed(enc.encodeSpeedRatio || 0)) +
+          metricTile('Speed', (enc.encodeSpeedRatio != null ? enc.encodeSpeedRatio.toFixed(2) : '—') + '×', 'realtime factor', levelBySpeed(enc.encodeSpeedRatio || 0)) +
+          metricTile('Dropped', enc.droppedFrames ?? 0, 'frames', levelByCount(enc.droppedFrames || 0, 5, 50)) +
+          metricTile('Duplicated', enc.duplicatedFrames ?? 0, 'frames', levelByCount(enc.duplicatedFrames || 0, 10, 100)) +
+          metricTile('Restarts', enc.encodeRestartCount ?? 0, 'FFmpeg', levelByCount(enc.encodeRestartCount || 0, 1, 2)) +
+          metricTile('Errors', enc.encodeErrorCount ?? 0, 'log errors', levelByCount(enc.encodeErrorCount || 0, 1, 1))
+        );
+
+        fillGrid('qosDeliveryGrid',
+          metricTile('Mode', (del.deliveryMode || 'webrtc').toUpperCase(), 'playback', 'good') +
+          metricTile('TTFF', fmtMs(del.startupTimeMs), 'time to first frame', del.startupTimeMs > 3000 ? 'warn' : 'good') +
+          metricTile('Stalls', del.rebufferCount ?? 0, 'rebuffer', levelByCount(del.rebufferCount || 0, 1, 5)) +
+          metricTile('ABR ↓/↑', (del.abrStepDownCount ?? 0) + '/' + (del.abrStepUpCount ?? 0), 'quality switches', levelByCount((del.abrStepDownCount || 0) + (del.abrStepUpCount || 0), 1, 5)) +
+          (isHls
+            ? metricTile('Bandwidth', 'HTTP', 'segment fetch', 'good') +
+              metricTile('Reconnects', '—', 'N/A for HLS', 'good')
+            : metricTile('Reconnects', del.reconnectCount ?? 0, 'WHEP', levelByCount(del.reconnectCount || 0, 1, 4)) +
+              metricTile('Loss', (del.avgPacketLossPct != null ? del.avgPacketLossPct.toFixed(1) : '0') + '%', 'WebRTC', levelByLoss(del.avgPacketLossPct || 0)) +
+              metricTile('RTT', (del.avgRttMs ?? 0) + ' ms', 'ICE', levelByRtt(del.avgRttMs || 0)) +
+              metricTile('Jitter', (del.avgJitterMs != null ? del.avgJitterMs.toFixed(1) : '0') + ' ms', '', del.avgJitterMs > 30 ? 'warn' : 'good')) +
+          metricTile('Del MTTD', fmtMs(ops.deliveryMttdMs), 'detect', 'warn') +
+          metricTile('Del MTTR', fmtMs(ops.deliveryMttrMs), 'recover', 'good')
+        );
+
+        fillGrid('qosViewersGrid',
+          metricTile('Join OK', (vw.joinSuccessRate != null ? Math.round(vw.joinSuccessRate) : 100) + '%', 'success rate', (vw.joinSuccessRate || 100) >= 90 ? 'good' : 'warn') +
+          metricTile('TTFF avg', fmtMs(vw.timeToPlayMs), 'per viewer', vw.timeToPlayMs > 4000 ? 'warn' : 'good') +
+          metricTile('Stalls/hr', (vw.stallEventsPerViewerHour != null ? vw.stallEventsPerViewerHour.toFixed(1) : '0'), 'rate', levelByCount(Math.ceil(vw.stallEventsPerViewerHour || 0), 2, 8)) +
+          metricTile('Switches', vw.qualitySwitchCount ?? 0, 'ABR', 'warn') +
+          metricTile('Fatals', vw.fatalPlaybackErrors ?? 0, 'playback', levelByCount(vw.fatalPlaybackErrors || 0, 1, 1)) +
+          metricTile('Watch time', fmtMs(vw.totalWatchMs), 'aggregate', 'good')
+        );
+
+        fillGrid('qosOpsGrid',
+          metricTile('Viewers', ops.concurrentViewers ?? 0, 'concurrent', 'good') +
+          metricTile('Streams', ops.activeStreams ?? 1, 'active', 'good') +
+          metricTile('Ingest MTTD', fmtMs(ops.mttdMs), '', 'warn') +
+          metricTile('Ingest MTTR', fmtMs(ops.mttrMs), '', 'good') +
+          metricTile('Del MTTD', fmtMs(ops.deliveryMttdMs), '', 'warn') +
+          metricTile('Del MTTR', fmtMs(ops.deliveryMttrMs), '', 'good') +
+          (ops.zombieStop ? metricTile('Zombie', 'YES', 'panel lost', 'bad') : metricTile('Zombie', 'no', 'broadcaster OK', 'good'))
+        );
+
+        document.getElementById('warLiveMeta').textContent =
+          '👀 ' + (ops.concurrentViewers ?? 0) + ' viewers · mode ' + (del.deliveryMode || 'webrtc');
+
+        drawSparkline('chartIngest', qosHistory.ingestKbps, {
+          max: 3000, min: 0, goodY: 1500, warnY: 600,
+          colorFor: (v) => v >= 1500 ? '#66bb6a' : (v >= 600 ? '#ffca28' : '#ef5350'),
+        });
+        drawSparkline('chartEncode', qosHistory.encodeFps, {
+          max: 35, min: 0, goodY: 28, warnY: 20,
+          colorFor: (v) => v >= 28 ? '#66bb6a' : (v >= 20 ? '#ffca28' : '#ef5350'),
+        });
+        document.getElementById('chartDelivery').style.display = isHls ? 'none' : 'block';
+        document.getElementById('chartDelStalls').style.display = isHls ? 'block' : 'none';
+        if (isHls) {
+          drawSparkline('chartDelStalls', qosHistory.delStalls, {
+            max: 20, min: 0, warnY: 2, goodY: 0,
+            colorFor: (v) => v < 2 ? '#66bb6a' : (v < 8 ? '#ffca28' : '#ef5350'),
+          });
+        } else {
+          drawSparkline('chartDelivery', qosHistory.packetLoss, {
+            max: 10, min: 0, warnY: 1, goodY: 0.5,
+            colorFor: (v) => v < 1 ? '#66bb6a' : (v < 5 ? '#ffca28' : '#ef5350'),
+          });
+        }
+        drawSparkline('chartViewerCount', qosHistory.viewerCount, {
+          max: Math.max(10, ...qosHistory.viewerCount, 1), min: 0,
+          colorFor: () => '#42a5f5',
+        });
+        drawSparkline('chartOverall', qosHistory.overallHealth, {
+          max: 100, min: 0, goodY: 80, warnY: 55,
+          colorFor: (v) => v >= 80 ? '#66bb6a' : (v >= 55 ? '#ffca28' : '#ef5350'),
+        });
+        drawSparkline('chartIngestScore', qosHistory.ingestScore, {
+          max: 100, min: 0, goodY: 80, warnY: 55,
+          colorFor: (v) => v >= 80 ? '#66bb6a' : (v >= 55 ? '#ffca28' : '#ef5350'),
+        });
+        drawSparkline('chartEncodeScore', qosHistory.encodeScore, {
+          max: 100, min: 0, goodY: 80, warnY: 55,
+          colorFor: (v) => v >= 80 ? '#66bb6a' : (v >= 55 ? '#ffca28' : '#ef5350'),
+        });
+
+        renderViewerTable(q.viewerSessions);
+        renderEvents(q.recentEvents);
+      } catch (e) {
+        console.warn('qos refresh', e);
+        document.getElementById('warStatusBadge').textContent = 'QoS OFFLINE';
+        document.getElementById('warStatusBadge').className = 'war-badge bad';
+      }
+    }
+
+    function startQosPoll() {
+      if (stopQosPoll) clearInterval(stopQosPoll);
+      Object.keys(qosHistory).forEach((k) => { qosHistory[k].length = 0; });
+      document.getElementById('qosPanel').style.display = 'block';
+      document.querySelector('.page').classList.add('war-room-active');
+      refreshQos();
+      stopQosPoll = setInterval(refreshQos, 3000);
+    }
+
+    function stopQosPollFn() {
+      if (stopQosPoll) {
+        clearInterval(stopQosPoll);
+        stopQosPoll = null;
+      }
+      document.getElementById('qosPanel').style.display = 'none';
+      document.querySelector('.page').classList.remove('war-room-active');
+      document.getElementById('qosPostmortem').textContent = '';
+    }
+
+    async function loadPublicConfig() {
+      try {
+        const cfg = await fetch('/config/public').then(r => r.json());
+        if (cfg.publicWebBase) publicWebBase = cfg.publicWebBase.replace(/\/$/, '');
+      } catch (e) {
+        console.warn('public config unavailable', e);
+      }
+    }
+
+    function setWatchLinks(streamId) {
+      const lan = publicWebBase + '/ui/viewer.html?stream=' + streamId;
+      const local = location.origin + '/ui/viewer.html?stream=' + streamId;
+      const aLan = document.getElementById('watchLinkLan');
+      const aLocal = document.getElementById('watchLinkLocal');
+      aLan.href = lan;
+      aLan.textContent = lan;
+      aLocal.href = local;
+      aLocal.textContent = local;
+    }
+
+    /** Works even if the browser cached an old presence.js without broadcaster heartbeat. */
+    function startBroadcasterHeartbeatSafe(streamId) {
+      if (window.Presence && typeof Presence.startBroadcasterHeartbeat === 'function') {
+        return Presence.startBroadcasterHeartbeat(streamId);
+      }
+      const tick = () => {
+        fetch('/streams/' + streamId + '/broadcaster-heartbeat', { method: 'POST' }).catch(() => {});
+      };
+      tick();
+      const id = setInterval(tick, 5000);
+      return () => clearInterval(id);
+    }
+
+    function showMessage(text, ok) {
+      msgEl.textContent = text;
+      msgEl.id = 'message';
+      msgEl.className = ok ? 'ok' : 'err';
+    }
+
+    function applyIngestWarning(room) {
+      const warn = document.getElementById('ingestWarn');
+      if (room.ingestUnstable) {
+        const msg = room.ingestWarning || 'Network unstable — check your upload';
+        warn.textContent = '⚠ ' + msg + (room.ingestBitrateKbps > 0 ? ' (~' + room.ingestBitrateKbps + ' kbps)' : '');
+        warn.style.display = 'block';
+      } else {
+        warn.style.display = 'none';
+      }
+    }
+
+    function updateDegradeButtons(degraded) {
+      document.getElementById('degradeBtn').style.display = degraded ? 'none' : 'inline-block';
+      document.getElementById('restoreBtn').style.display = degraded ? 'inline-block' : 'none';
+      document.getElementById('degradeHint').style.display = 'block';
+    }
+
+    function handleRoomUpdate(room) {
+      if (room.streamStatus === 'ENDED') {
+        setLive(false);
+        showMessage('Stream ended — control panel was closed or connection lost.', false);
+        return;
+      }
+      document.getElementById('viewerStat').textContent = '👀 ' + room.viewers + ' watching';
+      if (room.streamStatus) updatePauseButtons(room.streamStatus);
+      applyIngestWarning(room);
+      if (typeof room.encodeDegraded === 'boolean') updateDegradeButtons(room.encodeDegraded);
+    }
+
+    function updatePauseButtons(status) {
+      streamStatus = status;
+      const paused = status === 'PAUSED';
+      document.getElementById('pauseBtn').disabled = !currentStreamId || paused;
+      document.getElementById('pauseBtn').style.display = paused ? 'none' : 'inline-block';
+      document.getElementById('resumeBtn').disabled = !currentStreamId || !paused;
+      document.getElementById('resumeBtn').style.display = paused ? 'inline-block' : 'none';
+      const dot = document.getElementById('liveDot');
+      dot.textContent = paused ? '● PAUSED' : '● LIVE';
+      dot.style.color = paused ? '#f57c00' : '#c62828';
+    }
+
+    function setLive(on, streamId, status) {
+      document.getElementById('startBtn').disabled = on;
+      document.getElementById('stopBtn').disabled = !on;
+      document.getElementById('liveDot').style.display = on ? 'inline' : 'none';
+      document.getElementById('viewerStat').style.display = on ? 'inline-block' : 'none';
+      document.getElementById('watchLinks').style.display = on ? 'block' : 'none';
+      document.getElementById('couponPanel').style.display = on ? 'block' : 'none';
+      document.getElementById('demoPanel').style.display = on ? 'flex' : 'none';
+      document.getElementById('degradeHint').style.display = on ? 'block' : 'none';
+      if (on) updateDegradeButtons(false);
+
+      if (stopPoll) {
+        stopPoll();
+        stopPoll = null;
+      }
+      if (stopBroadcasterHeartbeat) {
+        stopBroadcasterHeartbeat();
+        stopBroadcasterHeartbeat = null;
+      }
+
+      if (on && streamId) {
+        currentStreamId = streamId;
+        updatePauseButtons(status || 'LIVE');
+        setWatchLinks(streamId);
+        stopBroadcasterHeartbeat = startBroadcasterHeartbeatSafe(streamId);
+        stopPoll = Presence.startBroadcasterPoll(streamId, handleRoomUpdate);
+        startQosPoll();
+        loadHistoryOptions();
+      } else {
+        stopQosPollFn();
+        currentStreamId = null;
+        streamStatus = null;
+        endingIntentionally = false;
+        document.getElementById('viewerStat').textContent = '👀 0 watching';
+        document.getElementById('ingestWarn').style.display = 'none';
+        updatePauseButtons('LIVE');
+      }
+    }
+
+    async function refreshLive() {
+      try {
+        const list = await fetch('/streams').then(r => r.json());
+        const mine = list.find(s => s.broadcasterId === 1);
+        if (mine) {
+          setLive(true, mine.id, mine.status);
+          updateDegradeButtons(!!mine.encodeDegraded);
+        } else setLive(false);
+      } catch (e) {
+        showMessage('Server not running?', false);
+      }
+    }
+
+    window.addEventListener('beforeunload', (e) => {
+      if (currentStreamId && !endingIntentionally) {
+        e.preventDefault();
+        e.returnValue = 'Your stream is still live. FFmpeg keeps running until you end the show or this tab stops heartbeating (~15s).';
+      }
+    });
+
+    document.getElementById('startBtn').onclick = async () => {
+      const title = document.getElementById('title').value.trim();
+      if (!title) {
+        showMessage('Enter a title', false);
+        return;
+      }
+      try {
+        const delivery = document.querySelector('input[name="delivery"]:checked')?.value || 'auto';
+        const r = await fetch('/streams/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ broadcasterId: 1, title, delivery }),
+        });
+        const data = await r.json();
+        if (!r.ok) {
+          showMessage(data.error || 'Could not start', false);
+          return;
+        }
+        setLive(true, data.id, data.status);
+        currentDeliveryMode = (data.delivery || 'webrtc').toLowerCase();
+        const degradeHint = document.getElementById('degradeHint');
+        degradeHint.textContent = currentDeliveryMode === 'hls'
+          ? 'Degrade restarts FFmpeg at lower HLS bitrate (100k / 15fps).'
+          : 'Degrade sends real choppy video to viewers — watch the viewer tab quality line drop.';
+        const mode = data.delivery || 'webrtc';
+        const hint = mode === 'hls'
+          ? ' HLS: ' + (data.playbackUrl || '/hls/' + data.id + '/index.m3u8')
+          : ' WebRTC WHEP via viewer page.';
+        showMessage('Live!' + hint + ' Open watch link on other tabs.', true);
+      } catch (e) {
+        showMessage(String(e), false);
+      }
+    };
+
+    document.getElementById('pauseBtn').onclick = async () => {
+      if (!currentStreamId) return;
+      try {
+        const r = await fetch('/streams/' + currentStreamId + '/pause', { method: 'POST' });
+        const data = await r.json();
+        if (!r.ok) {
+          showMessage(data.error || 'Pause failed', false);
+          return;
+        }
+        updatePauseButtons('PAUSED');
+        showMessage('Paused — viewers see a black screen. FFmpeg still running.', true);
+      } catch (e) {
+        showMessage(String(e), false);
+      }
+    };
+
+    document.getElementById('resumeBtn').onclick = async () => {
+      if (!currentStreamId) return;
+      try {
+        const r = await fetch('/streams/' + currentStreamId + '/resume', { method: 'POST' });
+        const data = await r.json();
+        if (!r.ok) {
+          showMessage(data.error || 'Resume failed', false);
+          return;
+        }
+        updatePauseButtons('LIVE');
+        showMessage('Resumed — live video again for viewers.', true);
+      } catch (e) {
+        showMessage(String(e), false);
+      }
+    };
+
+    document.getElementById('stopBtn').onclick = async () => {
+      if (!currentStreamId) return;
+      endingIntentionally = true;
+      try {
+        const r = await fetch('/streams/' + currentStreamId + '/stop', { method: 'POST' });
+        if (!r.ok) {
+          const data = await r.json();
+          showMessage(data.error || 'Stop failed', false);
+          endingIntentionally = false;
+          return;
+        }
+        setLive(false);
+        showMessage('Show ended.', true);
+      } catch (e) {
+        showMessage(String(e), false);
+        endingIntentionally = false;
+      }
+    };
+
+    document.getElementById('degradeBtn').onclick = async () => {
+      if (!currentStreamId) return;
+      try {
+        const r = await fetch('/streams/' + currentStreamId + '/degrade', { method: 'POST' });
+        const data = await r.json();
+        if (!r.ok) {
+          showMessage(data.error || 'Degrade failed', false);
+          return;
+        }
+        updateDegradeButtons(true);
+        showMessage('Stream degraded (100k / 5fps). Viewers should step down via ABR in a few seconds.', true);
+      } catch (e) {
+        showMessage(String(e), false);
+      }
+    };
+
+    document.getElementById('restoreBtn').onclick = async () => {
+      if (!currentStreamId) return;
+      try {
+        const r = await fetch('/streams/' + currentStreamId + '/restore-quality', { method: 'POST' });
+        const data = await r.json();
+        if (!r.ok) {
+          showMessage(data.error || 'Restore failed', false);
+          return;
+        }
+        updateDegradeButtons(false);
+        showMessage('Normal quality restored. Viewers can step back up if their download allows.', true);
+      } catch (e) {
+        showMessage(String(e), false);
+      }
+    };
+
+    document.getElementById('ingestDemoBtn').onclick = async () => {
+      if (!currentStreamId) return;
+      try {
+        const r = await fetch('/streams/' + currentStreamId + '/ingest-demo', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ durationSec: 60 }),
+        });
+        if (r.status === 204) {
+          showMessage('Demo: unstable upload simulated for 60s — watch for the orange banner.', true);
+          const room = await fetch('/streams/' + currentStreamId + '/room').then(res => res.json());
+          applyIngestWarning(room);
+        } else {
+          const data = await r.json();
+          showMessage(data.error || 'Demo failed', false);
+        }
+      } catch (e) {
+        showMessage(String(e), false);
+      }
+    };
+
+    document.getElementById('dropCouponBtn').onclick = async () => {
+      if (!currentStreamId) {
+        showMessage('Start a show first', false);
+        return;
+      }
+      const code = document.getElementById('couponCode').value.trim();
+      const percentOff = parseInt(document.getElementById('percentOff').value, 10);
+      const durationSec = parseInt(document.getElementById('durationSec').value, 10);
+      if (!/^[A-Za-z0-9_-]+$/.test(code)) {
+        showMessage('Code: letters, numbers, _ and - only', false);
+        return;
+      }
+      try {
+        const r = await fetch('/streams/' + currentStreamId + '/coupon', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code, percentOff, durationSec }),
+        });
+        if (r.status === 204) {
+          showMessage('Coupon sent — viewers will see it within 2 seconds.', true);
+        } else {
+          const data = await r.json();
+          showMessage(data.error || 'Coupon failed', false);
+        }
+      } catch (e) {
+        showMessage(String(e), false);
+      }
+    };
+
+    async function loadHistoryOptions() {
+      if (!currentStreamId) return;
+      const sel = document.getElementById('historyPick');
+      try {
+        const list = await fetch('/streams/' + currentStreamId + '/qos/history').then(r => r.json());
+        sel.innerHTML = '<option value="">Current (in memory)</option>';
+        (list || []).forEach((pm, i) => {
+          const o = document.createElement('option');
+          o.value = String(i);
+          const dur = pm.durationMs != null ? Math.round(pm.durationMs / 1000) + 's' : '?';
+          o.textContent = '#' + (i + 1) + ' — ' + dur + ' — ' + (pm.rootCause || 'none');
+          o.dataset.json = JSON.stringify(pm);
+          sel.appendChild(o);
+        });
+      } catch (e) {
+        console.warn('history load', e);
+      }
+    }
+
+    function renderPostmortem(pm, el) {
+      const lines = [
+        'Root cause: ' + (pm.rootCause || '—'),
+        'Duration: ' + (pm.durationMs != null ? Math.round(pm.durationMs / 1000) + 's' : '—'),
+        'Zombie stop: ' + (pm.zombieStop ? 'yes' : 'no'),
+        'Overall score: ' + (pm.summary ? pm.summary.overallHealthScore : '—'),
+        '',
+        '--- timeline ---',
+      ];
+      (pm.timeline || []).forEach(ev => {
+        lines.push((ev.stage || '') + ' | ' + (ev.type || '') + ' | ' + (ev.message || ''));
+      });
+      el.textContent = lines.join('\n');
+    }
+
+    document.getElementById('postmortemBtn').onclick = async () => {
+      if (!currentStreamId) return;
+      const el = document.getElementById('qosPostmortem');
+      el.textContent = 'Loading…';
+      try {
+        const histIdx = document.getElementById('historyPick').value;
+        let pm;
+        if (histIdx !== '') {
+          const opt = document.getElementById('historyPick').selectedOptions[0];
+          pm = JSON.parse(opt.dataset.json);
+        } else {
+          pm = await fetch('/streams/' + currentStreamId + '/postmortem').then(r => r.json());
+        }
+        renderPostmortem(pm, el);
+      } catch (e) {
+        el.textContent = String(e);
+      }
+    };
+
+    refreshLive();
+    setInterval(() => { if (currentStreamId) loadHistoryOptions(); }, 15000);
+    loadPublicConfig();
+  </script>
+</body>
+</html>

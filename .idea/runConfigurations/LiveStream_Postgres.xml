@@ -1,0 +1,10 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="LiveStream (PostgreSQL)" type="Application" factoryName="Application">
+    <option name="MAIN_CLASS_NAME" value="com.livestream.LiveStreamApplication" />
+    <module name="live-stream" />
+    <option name="PROGRAM_PARAMETERS" value="server config/config.yml" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

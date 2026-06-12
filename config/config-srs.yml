@@ -1,0 +1,58 @@
+# SRS WebRTC delivery — run: ./scripts/start-srs.sh then server config/config-srs.yml
+# MediaMTX keys kept for reference; streamDelivery selects SRS.
+
+server:
+  applicationConnectors:
+    - type: http
+      port: 8080
+      bindHost: 0.0.0.0
+  adminConnectors:
+    - type: http
+      port: 8081
+      bindHost: 0.0.0.0
+
+logging:
+  level: INFO
+  loggers:
+    com.livestream: DEBUG
+    org.hibernate.engine.internal.StatisticalLoggingSessionEventListener: WARN
+
+devMode: true
+
+database:
+  driverClass: org.h2.Driver
+  url: jdbc:h2:mem:livestream-srs-dev;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
+  user: sa
+  password: ""
+  properties:
+    hibernate.dialect: org.hibernate.dialect.H2Dialect
+    hibernate.hbm2ddl.auto: update
+    hibernate.show_sql: false
+  maxWaitForConnection: 1s
+  validationQuery: "SELECT 1"
+  initialSize: 1
+  minSize: 1
+  maxSize: 128
+
+ffmpegPath: /opt/homebrew/bin/ffmpeg
+hlsOutputDir: ./data/hls
+videoInput: camera
+cameraDevice: "0:0"
+useTestVideo: false
+rtmpPort: 1935
+
+publicWebBase: http://10.255.59.104:8080
+
+# SRS mode (stop MediaMTX first — both use RTMP :1935)
+streamDelivery: srs
+srsRtmpPublishBase: rtmp://127.0.0.1:1935
+srsWhepBase: http://127.0.0.1:1985
+srsApiBase: http://127.0.0.1:1985
+srsApiEnabled: true
+abrEnabled: true
+
+# Legacy MediaMTX settings (unused when streamDelivery: srs)
+mediamtxRtmpPublishBase: rtmp://127.0.0.1:1935
+mediamtxWebrtcBase: http://127.0.0.1:8889
+mediamtxApiBase: http://127.0.0.1:9997
+mediamtxApiEnabled: false
