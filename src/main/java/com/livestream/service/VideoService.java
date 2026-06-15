@@ -63,6 +63,9 @@ public class VideoService implements Managed {
     }
 
     public boolean isAbrEnabled(LiveStream stream) {
+        if (stream.isExternalEncoder()) {
+            return false;
+        }
         return isMediamtxDelivery(stream) && configuration.isAbrEnabled();
     }
 
@@ -88,8 +91,8 @@ public class VideoService implements Managed {
     }
 
     public void degradeStream(LiveStream stream) throws IOException {
-        if (stream.isDummyStream()) {
-            throw new IllegalStateException("Dummy streams support start, pause, and stop only");
+        if (stream.isDummyStream() || stream.isExternalEncoder()) {
+            throw new IllegalStateException("Dummy and external streams support start, pause, and stop only");
         }
         if (isMediamtxDelivery(stream)) {
             if (!isAbrEnabled(stream)) {
@@ -100,8 +103,8 @@ public class VideoService implements Managed {
     }
 
     public void restoreStreamQuality(LiveStream stream) throws IOException {
-        if (stream.isDummyStream()) {
-            throw new IllegalStateException("Dummy streams support start, pause, and stop only");
+        if (stream.isDummyStream() || stream.isExternalEncoder()) {
+            throw new IllegalStateException("Dummy and external streams support start, pause, and stop only");
         }
         if (isMediamtxDelivery(stream) && !isAbrEnabled(stream)) {
             throw new IllegalStateException("Restore requires WebRTC ABR (abrEnabled: true)");
@@ -297,6 +300,20 @@ public class VideoService implements Managed {
         return base.replaceAll("/$", "") + "/live/" + streamKey + suffix;
     }
 
+    /** Primary RTMP URL for external FFmpeg (single path, not ABR ladder). */
+    public String primaryRtmpPublishUrl(LiveStream stream) {
+        return rtmpPublishUrl(stream.getStreamKey(), "");
+    }
+
+    public boolean isEncoderRunning(long streamId) {
+        Process local = processes.get(streamId);
+        if (local != null && local.isAlive()) {
+            return true;
+        }
+        Process dummy = dummyProcesses.get(streamId);
+        return dummy != null && dummy.isAlive();
+    }
+
     /** Path key for ingest monitors (matches RTMP publish path under /live/). */
     public String ingestMonitorPath(LiveStream stream) {
         String suffix = isAbrEnabled(stream) ? "_high" : "";
@@ -343,6 +360,9 @@ public class VideoService implements Managed {
             response.setQualities(qualityOptions(stream));
         }
         response.setEncodeDegraded(isDegraded(stream.getId()));
+        if (stream.isExternalEncoder()) {
+            response.setRtmpPublishUrl(primaryRtmpPublishUrl(stream));
+        }
     }
 
     private String resolveInputMode() {

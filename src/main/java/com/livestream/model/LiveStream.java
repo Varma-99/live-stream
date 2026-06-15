@@ -55,6 +55,10 @@ public class LiveStream {
     @Column(name = "dummy_stream", nullable = false)
     private boolean dummyStream;
 
+    /** Remote FFmpeg RTMP — control plane only; no encoder process on this host. */
+    @Column(name = "external_encoder", nullable = false)
+    private boolean externalEncoder;
+
     public LiveStream() {
     }
 
@@ -144,5 +148,13 @@ public class LiveStream {
 
     public void setDummyStream(boolean dummyStream) {
         this.dummyStream = dummyStream;
+    }
+
+    public boolean isExternalEncoder() {
+        return externalEncoder;
+    }
+
+    public void setExternalEncoder(boolean externalEncoder) {
+        this.externalEncoder = externalEncoder;
     }
 }

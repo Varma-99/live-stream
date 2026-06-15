@@ -71,6 +71,11 @@ public class IngestHealthService implements Managed {
         return snapshots.getOrDefault(streamId, IngestSnapshot.unknown());
     }
 
+    /** True when SRS/MediaMTX reports an active publish path for this stream (from last poll). */
+    public boolean isPublishActive(long streamId) {
+        return snapshot(streamId).publishActive();
+    }
+
     /** Dev/demo: force unstable ingest metrics for UI testing (localhost RTMP is always fast). */
     public void simulateUnstable(long streamId, int durationSec) {
         int seconds = Math.max(10, Math.min(durationSec, 300));
@@ -83,7 +88,8 @@ public class IngestHealthService implements Managed {
                                 true,
                                 100,
                                 true,
-                                "Demo: simulated upload problem (not real network)")));
+                                "Demo: simulated upload problem (not real network)",
+                                true)));
         LOGGER.info("Ingest demo simulation on stream {} for {}s", streamId, seconds);
     }
 
@@ -169,7 +175,7 @@ public class IngestHealthService implements Managed {
         Long bytes = resolveIngestBytes(pathBytes, stream, pathName);
         if (bytes == null) {
             String msg = ingestMissMessage(pathBytes.isEmpty(), pathName);
-            snapshots.put(streamId, new IngestSnapshot(false, 0, true, msg));
+            snapshots.put(streamId, new IngestSnapshot(false, 0, true, msg, false));
             streamQoSService.recordIngest(streamId, 0, false, false, true, msg);
             return;
         }
@@ -178,7 +184,7 @@ public class IngestHealthService implements Managed {
         lastSamples.put(streamId, new PathSample(bytes, now));
 
         if (previous == null) {
-            snapshots.put(streamId, new IngestSnapshot(true, 0, false, null));
+            snapshots.put(streamId, new IngestSnapshot(true, 0, false, null, true));
             return;
         }
 
@@ -189,7 +195,7 @@ public class IngestHealthService implements Managed {
         boolean stalled = deltaBytes <= 0 && (now - previous.atMs()) > STALL_MS;
         boolean unstable = stalled || kbps < MIN_INGEST_KBPS;
         String reason = stalled ? "Upload stalled" : (unstable ? "Upload bitrate low" : null);
-        snapshots.put(streamId, new IngestSnapshot(true, kbps, unstable, reason));
+        snapshots.put(streamId, new IngestSnapshot(true, kbps, unstable, reason, true));
         streamQoSService.recordIngest(streamId, kbps, true, stalled, unstable, reason);
     }
 
@@ -215,7 +221,7 @@ public class IngestHealthService implements Managed {
         if (!found) {
             String pathName = videoService.ingestMonitorPath(stream);
             String msg = ingestMissMessage(stats.isEmpty(), pathName);
-            snapshots.put(streamId, new IngestSnapshot(false, 0, true, msg));
+            snapshots.put(streamId, new IngestSnapshot(false, 0, true, msg, false));
             streamQoSService.recordIngest(streamId, 0, false, false, true, msg);
             return;
         }
@@ -231,7 +237,7 @@ public class IngestHealthService implements Managed {
 
         boolean unstable = stalled || (previous != null && totalKbps < MIN_INGEST_KBPS);
         String reason = stalled ? "Upload stalled" : (unstable ? "Upload bitrate low" : null);
-        snapshots.put(streamId, new IngestSnapshot(true, totalKbps, unstable, reason));
+        snapshots.put(streamId, new IngestSnapshot(true, totalKbps, unstable, reason, true));
         streamQoSService.recordIngest(streamId, totalKbps, true, stalled, unstable, reason);
     }
 
@@ -285,9 +291,11 @@ public class IngestHealthService implements Managed {
     private record PathSample(long bytes, long atMs) {
     }
 
-    public record IngestSnapshot(boolean monitoring, long ingestKbps, boolean unstable, String reason) {
+    public record IngestSnapshot(
+            boolean monitoring, long ingestKbps, boolean unstable, String reason, boolean publishActive) {
+
         static IngestSnapshot unknown() {
-            return new IngestSnapshot(false, 0, false, null);
+            return new IngestSnapshot(false, 0, false, null, false);
         }
     }
 

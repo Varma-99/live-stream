@@ -15,7 +15,7 @@
   <div class="page">
     <div class="card">
       <h1>Streamer</h1>
-      <p class="muted">Video is captured by FFmpeg on this computer (not this browser). Closing this tab ends the stream after ~15 seconds unless you click <strong>End show</strong>.</p>
+      <p class="muted">Video is captured by FFmpeg on this computer (not this browser). Closing this tab ends the stream after ~15 seconds unless you click <strong>End show</strong>. With <code>encoderMode: external</code>, run FFmpeg yourself to the RTMP URL returned on start — this app does not spawn it.</p>
 
       <label for="title">Show title</label>
       <input id="title" type="text" value="My live sale">
@@ -737,9 +737,12 @@
           ? 'Degrade restarts FFmpeg at lower HLS bitrate (100k / 15fps).'
           : 'Degrade sends real choppy video to viewers — watch the viewer tab quality line drop.';
         const mode = data.delivery || 'webrtc';
-        const hint = mode === 'hls'
+        let hint = mode === 'hls'
           ? ' HLS: ' + (data.playbackUrl || '/hls/' + data.id + '/index.m3u8')
           : ' WebRTC WHEP via viewer page.';
+        if (data.rtmpPublishUrl) {
+          hint = ' Run FFmpeg to: ' + data.rtmpPublishUrl + ' — viewers see it once SRS receives RTMP.';
+        }
         showMessage('Live!' + hint + ' Open watch link on other tabs.', true);
       } catch (e) {
         showMessage(String(e), false);

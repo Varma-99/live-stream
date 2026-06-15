@@ -65,6 +65,15 @@ public class LiveStreamConfiguration extends Configuration {
      */
     private String publicWebBase = "http://127.0.0.1:8080";
 
+    /**
+     * Encode plane: {@code local} = app spawns FFmpeg (camera/dummy on this host);
+     * {@code external} = stream record only — publisher pushes RTMP to {@link #srsRtmpPublishBase}.
+     */
+    private String encoderMode = "local";
+
+    /** When true, {@code GET /streams} hides WebRTC streams with no active SRS/MediaMTX publish. */
+    private boolean ingestLivenessFilter = true;
+
     @JsonProperty("database")
     public DataSourceFactory getDataSourceFactory() {
         return database;
@@ -266,5 +275,33 @@ public class LiveStreamConfiguration extends Configuration {
     @JsonProperty
     public void setSrsApiEnabled(boolean srsApiEnabled) {
         this.srsApiEnabled = srsApiEnabled;
+    }
+
+    @JsonProperty
+    public String getEncoderMode() {
+        return encoderMode;
+    }
+
+    @JsonProperty
+    public void setEncoderMode(String encoderMode) {
+        this.encoderMode = encoderMode;
+    }
+
+    public boolean isLocalEncoderMode() {
+        return !isExternalEncoderMode();
+    }
+
+    public boolean isExternalEncoderMode() {
+        return encoderMode != null && "external".equalsIgnoreCase(encoderMode.trim());
+    }
+
+    @JsonProperty
+    public boolean isIngestLivenessFilter() {
+        return ingestLivenessFilter;
+    }
+
+    @JsonProperty
+    public void setIngestLivenessFilter(boolean ingestLivenessFilter) {
+        this.ingestLivenessFilter = ingestLivenessFilter;
     }
 }

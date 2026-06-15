@@ -55,6 +55,18 @@ public class StreamResponse {
     @JsonProperty
     private boolean dummy;
 
+    /** Remote FFmpeg / RTMP — encode plane not on control host. */
+    @JsonProperty
+    private boolean externalEncoder;
+
+    /** RTMP URL for external FFmpeg publish. */
+    @JsonProperty
+    private String rtmpPublishUrl;
+
+    /** SRS/MediaMTX has active publish (from ingest health poll). */
+    @JsonProperty
+    private boolean publishActive;
+
     public static StreamResponse from(LiveStream stream) {
         StreamResponse response = new StreamResponse();
         response.id = stream.getId();
@@ -66,6 +78,7 @@ public class StreamResponse {
         response.broadcasterName = stream.getBroadcaster().getDisplayName();
         response.startedAt = stream.getStartedAt();
         response.dummy = stream.isDummyStream();
+        response.externalEncoder = stream.isExternalEncoder();
         return response;
     }
 
@@ -139,5 +152,25 @@ public class StreamResponse {
 
     public boolean isDummy() {
         return dummy;
+    }
+
+    public boolean isExternalEncoder() {
+        return externalEncoder;
+    }
+
+    public String getRtmpPublishUrl() {
+        return rtmpPublishUrl;
+    }
+
+    public void setRtmpPublishUrl(String rtmpPublishUrl) {
+        this.rtmpPublishUrl = rtmpPublishUrl;
+    }
+
+    public boolean isPublishActive() {
+        return publishActive;
+    }
+
+    public void setPublishActive(boolean publishActive) {
+        this.publishActive = publishActive;
     }
 }

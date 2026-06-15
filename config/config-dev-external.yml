@@ -1,6 +1,10 @@
-# Local development — embedded H2 + SRS WebRTC (no PostgreSQL required)
+# External encode plane — control app only; you run FFmpeg (or any RTMP client) to SRS.
+# Same LAN setup as config-dev.yml — no public IP required.
+#
 # 1) ./scripts/start-srs.sh
-# 2) ./mvnw server config/config-dev.yml   (or Run in IntelliJ — uses this file)
+# 2) ./mvnw server config/config-dev-external.yml
+# 3) POST /streams/start or broadcast.html → copy rtmpPublishUrl, run FFmpeg publish
+# 4) Viewer list shows stream once SRS receives RTMP (ingestLivenessFilter)
 
 server:
   applicationConnectors:
@@ -22,8 +26,7 @@ devMode: true
 
 database:
   driverClass: org.h2.Driver
-  # In-memory avoids "database file locked" when a previous run is still open
-  url: jdbc:h2:mem:livestream-dev;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
+  url: jdbc:h2:mem:livestream-external-dev;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
   user: sa
   password: ""
   properties:
@@ -38,29 +41,24 @@ database:
 
 ffmpegPath: /opt/homebrew/bin/ffmpeg
 hlsOutputDir: ./data/hls
-# laptop camera (macOS). Use "test" for color bars, "rtmp" for external FFmpeg ingest later
-videoInput: camera
-cameraDevice: "0:0"
-useTestVideo: false
+videoInput: test
+useTestVideo: true
 rtmpPort: 1935
 
-# LAN viewer links — keep in sync with SRS CANDIDATE (ipconfig getifaddr en0)
 publicWebBase: http://10.255.51.126:8080
 
-# SRS mode (stop MediaMTX first — both use RTMP :1935)
 streamDelivery: srs
+# Media plane — RTMP ingest target for FFmpeg (127.0.0.1 if SRS on same Mac)
 srsRtmpPublishBase: rtmp://127.0.0.1:1935
+# Control plane proxies WHEP/API to media plane
 srsWhepBase: http://127.0.0.1:1985
 srsApiBase: http://127.0.0.1:1985
 srsApiEnabled: true
-abrEnabled: true
+abrEnabled: false
 
-# Planes: control (this app) + media (SRS) + encode (FFmpeg)
-# local = app spawns FFmpeg (camera). external = you run FFmpeg to srsRtmpPublishBase.
-encoderMode: local
+encoderMode: external
 ingestLivenessFilter: true
 
-# Legacy MediaMTX (streamDelivery: mediamtx) — not used in SRS mode
 mediamtxRtmpPublishBase: rtmp://127.0.0.1:1935
 mediamtxWebrtcBase: http://127.0.0.1:8889
 mediamtxApiBase: http://127.0.0.1:9997

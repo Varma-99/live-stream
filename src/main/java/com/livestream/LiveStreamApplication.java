@@ -95,6 +95,10 @@ public class LiveStreamApplication extends Application<LiveStreamConfiguration> 
         }
 
         LOGGER.info("live-stream started — streamDelivery={}", configuration.getStreamDelivery());
+        LOGGER.info("Encode plane: encoderMode={}", configuration.getEncoderMode());
+        if (configuration.isIngestLivenessFilter()) {
+            LOGGER.info("Viewer list: ingest liveness filter ON (SRS/MediaMTX publish required)");
+        }
         if (configuration.isSrsDelivery()) {
             LOGGER.info("Media server: SRS (./scripts/start-srs.sh) — WHEP proxied to {}", configuration.getSrsWhepBase());
         } else if (configuration.isMediamtxDelivery()) {

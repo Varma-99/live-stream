@@ -59,12 +59,33 @@ public class StreamService {
 
     public List<StreamResponse> listLiveStreams() {
         return liveStreamDAO.findBroadcasting().stream()
-                .map(stream -> {
-                    StreamResponse response = StreamResponse.from(stream);
-                    videoService.applyPlaybackUrls(response, stream);
-                    return response;
-                })
+                .filter(this::visibleToViewers)
+                .map(this::toStreamResponse)
                 .toList();
+    }
+
+    private StreamResponse toStreamResponse(LiveStream stream) {
+        StreamResponse response = StreamResponse.from(stream);
+        videoService.applyPlaybackUrls(response, stream);
+        response.setPublishActive(isPublishActive(stream));
+        return response;
+    }
+
+    private boolean isPublishActive(LiveStream stream) {
+        if (videoService.isEncoderRunning(stream.getId())) {
+            return true;
+        }
+        return ingestHealthService.isPublishActive(stream.getId());
+    }
+
+    private boolean visibleToViewers(LiveStream stream) {
+        if (!configuration.isIngestLivenessFilter()) {
+            return true;
+        }
+        if (!videoService.isMediamtxDelivery(stream)) {
+            return true;
+        }
+        return isPublishActive(stream);
     }
 
     public StreamResponse startStream(Long broadcasterId, String title, String delivery) {
@@ -79,10 +100,12 @@ public class StreamService {
             throw new IllegalStateException("Broadcaster already has a live stream");
         }
 
-        if (usesLocalCamera() && liveStreamDAO.countBroadcasting() > 0) {
+        if (configuration.isLocalEncoderMode() && usesLocalCamera() && liveStreamDAO.countBroadcasting() > 0) {
             throw new IllegalStateException(
                     "Only one live stream at a time while using the laptop camera. Stop the current stream first.");
         }
+
+        boolean externalEncoder = configuration.isExternalEncoderMode();
 
         LiveStream stream = new LiveStream();
         stream.setBroadcaster(broadcaster);
@@ -92,18 +115,26 @@ public class StreamService {
         stream.setViewCount(0L);
         stream.setStartedAt(Instant.now());
         stream.setDelivery(normalizeStoredDelivery(delivery));
+        stream.setExternalEncoder(externalEncoder);
 
         LiveStream saved = liveStreamDAO.create(stream);
-        try {
-            videoService.startForStream(saved);
-        } catch (java.io.IOException e) {
-            throw new IllegalStateException("Failed to start video engine: " + e.getMessage(), e);
+        if (externalEncoder) {
+            if (!videoService.isMediamtxDelivery(saved)) {
+                throw new IllegalStateException(
+                        "External encoder mode requires WebRTC delivery (streamDelivery: srs or mediamtx)");
+            }
+        } else {
+            try {
+                videoService.startForStream(saved);
+            } catch (IOException e) {
+                throw new IllegalStateException("Failed to start video engine: " + e.getMessage(), e);
+            }
         }
-        broadcasterControlService.onStreamStarted(saved.getId());
+        if (!externalEncoder) {
+            broadcasterControlService.onStreamStarted(saved.getId());
+        }
         streamQoSService.beginSession(saved.getId(), videoService.resolveDelivery(saved));
-        StreamResponse response = StreamResponse.from(saved);
-        videoService.applyPlaybackUrls(response, saved);
-        return response;
+        return toStreamResponse(saved);
     }
 
     public StreamResponse startDummyStream(String title, String delivery) {
@@ -128,9 +159,7 @@ public class StreamService {
             throw new IllegalStateException("Failed to start dummy encoder: " + e.getMessage(), e);
         }
         streamQoSService.beginSession(saved.getId(), videoService.resolveDelivery(saved));
-        StreamResponse response = StreamResponse.from(saved);
-        videoService.applyPlaybackUrls(response, saved);
-        return response;
+        return toStreamResponse(saved);
     }
 
     public StreamResponse pauseStream(Long streamId) {
@@ -140,9 +169,7 @@ public class StreamService {
             throw new IllegalStateException("Stream is not live (cannot pause): " + streamId);
         }
         stream.setStatus(StreamStatus.PAUSED);
-        StreamResponse response = StreamResponse.from(stream);
-        videoService.applyPlaybackUrls(response, stream);
-        return response;
+        return toStreamResponse(stream);
     }
 
     public StreamResponse resumeStream(Long streamId) {
@@ -152,9 +179,7 @@ public class StreamService {
             throw new IllegalStateException("Stream is not paused: " + streamId);
         }
         stream.setStatus(StreamStatus.LIVE);
-        StreamResponse response = StreamResponse.from(stream);
-        videoService.applyPlaybackUrls(response, stream);
-        return response;
+        return toStreamResponse(stream);
     }
 
     public StreamResponse stopStream(Long streamId) {
@@ -179,8 +204,8 @@ public class StreamService {
     public void simulateIngestUnstable(long streamId, int durationSec) {
         requireDevMode();
         LiveStream stream = requireActiveStream(streamId);
-        if (stream.isDummyStream()) {
-            throw new IllegalStateException("Dummy streams support start, pause, and stop only");
+        if (stream.isDummyStream() || stream.isExternalEncoder()) {
+            throw new IllegalStateException("Dummy and external streams support start, pause, and stop only");
         }
         ingestHealthService.simulateUnstable(streamId, durationSec);
         streamQoSService.recordIngest(streamId, 100, true, true, true, "Demo: simulated upload problem");
@@ -189,8 +214,8 @@ public class StreamService {
     public StreamResponse degradeStreamQuality(long streamId) {
         requireDevMode();
         LiveStream stream = requireActiveStream(streamId);
-        if (stream.isDummyStream()) {
-            throw new IllegalStateException("Dummy streams support start, pause, and stop only");
+        if (stream.isDummyStream() || stream.isExternalEncoder()) {
+            throw new IllegalStateException("Dummy and external streams support start, pause, and stop only");
         }
         try {
             videoService.degradeStream(stream);
@@ -198,16 +223,14 @@ public class StreamService {
         } catch (IOException e) {
             throw new IllegalStateException("Failed to degrade stream: " + e.getMessage(), e);
         }
-        StreamResponse response = StreamResponse.from(stream);
-        videoService.applyPlaybackUrls(response, stream);
-        return response;
+        return toStreamResponse(stream);
     }
 
     public StreamResponse restoreStreamQuality(long streamId) {
         requireDevMode();
         LiveStream stream = requireActiveStream(streamId);
-        if (stream.isDummyStream()) {
-            throw new IllegalStateException("Dummy streams support start, pause, and stop only");
+        if (stream.isDummyStream() || stream.isExternalEncoder()) {
+            throw new IllegalStateException("Dummy and external streams support start, pause, and stop only");
         }
         try {
             videoService.restoreStreamQuality(stream);
@@ -215,9 +238,7 @@ public class StreamService {
         } catch (IOException e) {
             throw new IllegalStateException("Failed to restore stream quality: " + e.getMessage(), e);
         }
-        StreamResponse response = StreamResponse.from(stream);
-        videoService.applyPlaybackUrls(response, stream);
-        return response;
+        return toStreamResponse(stream);
     }
 
     public void requireStreamExists(long streamId) {
