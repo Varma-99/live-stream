@@ -106,6 +106,33 @@ public class StreamService {
         return response;
     }
 
+    public StreamResponse startDummyStream(String title, String delivery) {
+        User dummyBroadcaster = userDAO.findByUsername("dummy_streamer")
+                .orElseThrow(() -> new IllegalStateException(
+                        "dummy_streamer user missing — restart app in dev mode to seed users"));
+
+        LiveStream stream = new LiveStream();
+        stream.setBroadcaster(dummyBroadcaster);
+        stream.setTitle(title.trim());
+        stream.setStreamKey(generateStreamKey());
+        stream.setStatus(StreamStatus.LIVE);
+        stream.setViewCount(0L);
+        stream.setStartedAt(Instant.now());
+        stream.setDelivery(normalizeStoredDelivery(delivery));
+        stream.setDummyStream(true);
+
+        LiveStream saved = liveStreamDAO.create(stream);
+        try {
+            videoService.startDummyForStream(saved);
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to start dummy encoder: " + e.getMessage(), e);
+        }
+        streamQoSService.beginSession(saved.getId(), videoService.resolveDelivery(saved));
+        StreamResponse response = StreamResponse.from(saved);
+        videoService.applyPlaybackUrls(response, saved);
+        return response;
+    }
+
     public StreamResponse pauseStream(Long streamId) {
         LiveStream stream = liveStreamDAO.findById(streamId)
                 .orElseThrow(() -> new IllegalArgumentException("Stream not found: " + streamId));
@@ -151,7 +178,10 @@ public class StreamService {
 
     public void simulateIngestUnstable(long streamId, int durationSec) {
         requireDevMode();
-        requireActiveStream(streamId);
+        LiveStream stream = requireActiveStream(streamId);
+        if (stream.isDummyStream()) {
+            throw new IllegalStateException("Dummy streams support start, pause, and stop only");
+        }
         ingestHealthService.simulateUnstable(streamId, durationSec);
         streamQoSService.recordIngest(streamId, 100, true, true, true, "Demo: simulated upload problem");
     }
@@ -159,6 +189,9 @@ public class StreamService {
     public StreamResponse degradeStreamQuality(long streamId) {
         requireDevMode();
         LiveStream stream = requireActiveStream(streamId);
+        if (stream.isDummyStream()) {
+            throw new IllegalStateException("Dummy streams support start, pause, and stop only");
+        }
         try {
             videoService.degradeStream(stream);
             streamQoSService.recordDegrade(streamId, true);
@@ -173,6 +206,9 @@ public class StreamService {
     public StreamResponse restoreStreamQuality(long streamId) {
         requireDevMode();
         LiveStream stream = requireActiveStream(streamId);
+        if (stream.isDummyStream()) {
+            throw new IllegalStateException("Dummy streams support start, pause, and stop only");
+        }
         try {
             videoService.restoreStreamQuality(stream);
             streamQoSService.recordDegrade(streamId, false);
@@ -209,7 +245,7 @@ public class StreamService {
     }
 
     private void endActiveStream(long streamId, LiveStream stream) {
-        videoService.stopForStream(streamId);
+        videoService.stopAnyEncoderForStream(streamId);
         ingestHealthService.clear(streamId);
         streamQoSService.endSession(streamId, false);
         broadcasterControlService.onStreamStopped(streamId);

@@ -45,7 +45,7 @@ useTestVideo: false
 rtmpPort: 1935
 
 # LAN viewer links — keep in sync with SRS CANDIDATE (ipconfig getifaddr en0)
-publicWebBase: http://10.255.59.104:8080
+publicWebBase: http://10.255.51.126:8080
 
 # SRS mode (stop MediaMTX first — both use RTMP :1935)
 streamDelivery: srs

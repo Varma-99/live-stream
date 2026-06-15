@@ -53,6 +53,14 @@ public class BroadcasterControlService implements Managed {
     }
 
     public void onStreamStarted(long streamId) {
+        onStreamStarted(streamId, false);
+    }
+
+    /** Dummy streams skip zombie tracking — no broadcast.html heartbeat required. */
+    public void onStreamStarted(long streamId, boolean dummy) {
+        if (dummy) {
+            return;
+        }
         lastHeartbeatMs.put(streamId, System.currentTimeMillis());
     }
 
@@ -113,7 +121,7 @@ public class BroadcasterControlService implements Managed {
                 }
 
                 streamQoSService.endSession(streamId, true);
-                videoService.stopForStream(streamId);
+                videoService.stopAnyEncoderForStream(streamId);
                 ingestHealthService.clear(streamId);
                 liveRoomHub.closeRoom(streamId);
                 stream.setStatus(StreamStatus.ENDED);

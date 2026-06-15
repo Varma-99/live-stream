@@ -18,4 +18,11 @@ public class UserDAO extends AbstractDAO<User> {
     public Optional<User> findById(Long id) {
         return Optional.ofNullable(get(id));
     }
+
+    public Optional<User> findByUsername(String username) {
+        return currentSession()
+                .createQuery("FROM User u WHERE u.username = :username", User.class)
+                .setParameter("username", username)
+                .uniqueResultOptional();
+    }
 }

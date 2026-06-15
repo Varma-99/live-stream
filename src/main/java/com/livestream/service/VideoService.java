@@ -31,6 +31,7 @@ public class VideoService implements Managed {
     private final LiveStreamConfiguration configuration;
     private final StreamQoSService streamQoSService;
     private final Map<Long, Process> processes = new ConcurrentHashMap<>();
+    private final Map<Long, Process> dummyProcesses = new ConcurrentHashMap<>();
     private final Map<Long, Boolean> degradedStreams = new ConcurrentHashMap<>();
 
     @Inject
@@ -70,10 +71,26 @@ public class VideoService implements Managed {
     }
 
     public void startForStream(LiveStream stream) throws IOException {
+        if (stream.isDummyStream()) {
+            startDummyForStream(stream);
+            return;
+        }
         startFfmpeg(stream, false);
     }
 
+    /** Test-pattern FFmpeg — separate process map; same RTMP/WHEP delivery as a real stream. */
+    public void startDummyForStream(LiveStream stream) throws IOException {
+        Long streamId = stream.getId();
+        if (processes.containsKey(streamId) || dummyProcesses.containsKey(streamId)) {
+            throw new IllegalStateException("Encoder already running for stream " + streamId);
+        }
+        startDummyFfmpeg(stream, false);
+    }
+
     public void degradeStream(LiveStream stream) throws IOException {
+        if (stream.isDummyStream()) {
+            throw new IllegalStateException("Dummy streams support start, pause, and stop only");
+        }
         if (isMediamtxDelivery(stream)) {
             if (!isAbrEnabled(stream)) {
                 throw new IllegalStateException("Degrade demo requires WebRTC ABR (abrEnabled: true)");
@@ -83,6 +100,9 @@ public class VideoService implements Managed {
     }
 
     public void restoreStreamQuality(LiveStream stream) throws IOException {
+        if (stream.isDummyStream()) {
+            throw new IllegalStateException("Dummy streams support start, pause, and stop only");
+        }
         if (isMediamtxDelivery(stream) && !isAbrEnabled(stream)) {
             throw new IllegalStateException("Restore requires WebRTC ABR (abrEnabled: true)");
         }
@@ -160,6 +180,57 @@ public class VideoService implements Managed {
         Thread logThread = new Thread(() -> drainLogs(streamId, process), "ffmpeg-log-" + streamId);
         logThread.setDaemon(true);
         logThread.start();
+    }
+
+    private void startDummyFfmpeg(LiveStream stream, boolean degraded) throws IOException {
+        Long streamId = stream.getId();
+        Path ffmpeg = Path.of(configuration.getFfmpegPath());
+        if (!Files.isExecutable(ffmpeg)) {
+            throw new IllegalStateException(
+                    "FFmpeg not found at " + ffmpeg + " — install FFmpeg or set ffmpegPath in config");
+        }
+
+        Path outputDir = Paths.get(configuration.getHlsOutputDir()).resolve(String.valueOf(streamId));
+        if (!isMediamtxDelivery(stream)) {
+            Files.createDirectories(outputDir);
+        }
+
+        List<String> command = buildDummyFfmpegCommand(ffmpeg.toString(), outputDir, stream, degraded);
+        ProcessBuilder builder = new ProcessBuilder(command);
+        builder.redirectErrorStream(true);
+        Process process = builder.start();
+
+        dummyProcesses.put(streamId, process);
+        streamQoSService.recordEncodeStarted(streamId);
+
+        LOGGER.info(
+                "Dummy FFmpeg started for stream {} (pid={}, delivery={}, abr={})",
+                streamId,
+                process.pid(),
+                resolveDelivery(stream),
+                isAbrEnabled(stream));
+
+        Thread logThread = new Thread(() -> drainLogs(streamId, process), "ffmpeg-dummy-log-" + streamId);
+        logThread.setDaemon(true);
+        logThread.start();
+    }
+
+    private List<String> buildDummyFfmpegCommand(
+            String ffmpegPath, Path outputDir, LiveStream stream, boolean degraded) {
+        if (isMediamtxDelivery(stream)) {
+            String streamKey = stream.getStreamKey();
+            if (isAbrEnabled(stream)) {
+                String high = rtmpPublishUrl(streamKey, "_high");
+                String mid = rtmpPublishUrl(streamKey, "_mid");
+                String low = rtmpPublishUrl(streamKey, "_low");
+                return FfmpegCommandBuilder.testPatternToMediamtxAbr(ffmpegPath, high, mid, low, degraded);
+            }
+            return FfmpegCommandBuilder.testPatternToMediamtx(
+                    ffmpegPath, rtmpPublishUrl(streamKey, ""));
+        }
+        return degraded
+                ? FfmpegCommandBuilder.testPatternToHlsDegraded(ffmpegPath, outputDir)
+                : FfmpegCommandBuilder.testPatternToHls(ffmpegPath, outputDir);
     }
 
     private List<String> buildFfmpegCommand(
@@ -283,8 +354,21 @@ public class VideoService implements Managed {
     }
 
     public void stopForStream(Long streamId) {
-        Process process = processes.remove(streamId);
+        stopProcess(processes.remove(streamId), streamId, "FFmpeg");
         degradedStreams.remove(streamId);
+    }
+
+    public void stopDummyForStream(Long streamId) {
+        stopProcess(dummyProcesses.remove(streamId), streamId, "Dummy FFmpeg");
+    }
+
+    /** Stops local camera or dummy test-pattern encoder for this stream id. */
+    public void stopAnyEncoderForStream(Long streamId) {
+        stopForStream(streamId);
+        stopDummyForStream(streamId);
+    }
+
+    private void stopProcess(Process process, Long streamId, String label) {
         if (process == null) {
             return;
         }
@@ -297,7 +381,7 @@ public class VideoService implements Managed {
             Thread.currentThread().interrupt();
             process.destroyForcibly();
         }
-        LOGGER.info("FFmpeg stopped for stream {}", streamId);
+        LOGGER.info("{} stopped for stream {}", label, streamId);
     }
 
     @Override
@@ -308,6 +392,7 @@ public class VideoService implements Managed {
     @Override
     public void stop() {
         processes.keySet().forEach(this::stopForStream);
+        dummyProcesses.keySet().forEach(this::stopDummyForStream);
     }
 
     private void drainLogs(Long streamId, Process process) {

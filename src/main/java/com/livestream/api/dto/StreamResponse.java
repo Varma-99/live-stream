@@ -51,6 +51,10 @@ public class StreamResponse {
     @JsonProperty
     private boolean encodeDegraded;
 
+    /** Test-pattern stream — not tied to main camera / broadcaster tab. */
+    @JsonProperty
+    private boolean dummy;
+
     public static StreamResponse from(LiveStream stream) {
         StreamResponse response = new StreamResponse();
         response.id = stream.getId();
@@ -61,6 +65,7 @@ public class StreamResponse {
         response.broadcasterId = stream.getBroadcaster().getId();
         response.broadcasterName = stream.getBroadcaster().getDisplayName();
         response.startedAt = stream.getStartedAt();
+        response.dummy = stream.isDummyStream();
         return response;
     }
 
@@ -130,5 +135,9 @@ public class StreamResponse {
 
     public Instant getStartedAt() {
         return startedAt;
+    }
+
+    public boolean isDummy() {
+        return dummy;
     }
 }

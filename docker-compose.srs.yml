@@ -12,7 +12,7 @@ services:
       - "8000:8000/udp"
       - "10080:10080/udp"
     environment:
-      CANDIDATE: ${SRS_CANDIDATE:-127.0.0.1}
+      CANDIDATE: ${SRS_CANDIDATE:-10.255.51.126}
     volumes:
       - ./srs.conf:/usr/local/srs/conf/srs.conf:ro
     command: ["./objs/srs", "-c", "conf/srs.conf"]

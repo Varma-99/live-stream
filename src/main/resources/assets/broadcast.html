@@ -50,6 +50,17 @@
       </p>
     </div>
 
+    <div class="card" id="dummyPanel">
+      <h2 style="font-size:1.1rem;margin-top:0">Dummy streamers</h2>
+      <p class="muted" style="margin-bottom:0.75rem">Independent test-pattern streams (not tied to your camera show). Uses delivery mode above. Pause / stop only — open each watch link in its own viewer tab.</p>
+      <label for="dummyTitle">Dummy title</label>
+      <input id="dummyTitle" type="text" value="Dummy stream">
+      <div class="actions" style="margin-top:0.5rem">
+        <button class="btn" type="button" id="startDummyBtn">Start dummy</button>
+      </div>
+      <div id="dummyList" class="muted" style="margin-top:1rem">No dummy streams running.</div>
+    </div>
+
     <div class="card qos-war-room" id="qosPanel" style="display:none">
       <div class="war-header">
         <div>
@@ -924,6 +935,90 @@
     refreshLive();
     setInterval(() => { if (currentStreamId) loadHistoryOptions(); }, 15000);
     loadPublicConfig();
+
+    function escapeHtml(text) {
+      const el = document.createElement('div');
+      el.textContent = text;
+      return el.innerHTML;
+    }
+
+    async function refreshDummyList() {
+      const listEl = document.getElementById('dummyList');
+      try {
+        const list = await fetch('/streams').then(r => r.json());
+        const dummies = (list || []).filter(s => s.dummy);
+        if (!dummies.length) {
+          listEl.innerHTML = '<span class="muted">No dummy streams running.</span>';
+          return;
+        }
+        listEl.innerHTML = dummies.map(s => {
+          const watch = location.origin + '/ui/viewer.html?stream=' + s.id;
+          const lan = publicWebBase + '/ui/viewer.html?stream=' + s.id;
+          const paused = s.status === 'PAUSED';
+          return '<div style="margin:0.75rem 0;padding:0.75rem;border:1px solid var(--border,#333);border-radius:6px">' +
+            '<strong>#' + s.id + '</strong> ' + escapeHtml(s.title) +
+            ' <span class="muted">(' + s.status + ')</span><br>' +
+            '<a href="' + watch + '" target="_blank" rel="noopener">Watch</a> · ' +
+            '<a href="' + lan + '" target="_blank" rel="noopener">LAN watch</a><br>' +
+            '<span class="actions" style="margin-top:0.35rem;display:inline-flex;gap:0.35rem;flex-wrap:wrap">' +
+            (paused
+              ? '<button type="button" class="btn" data-dummy-action="resume" data-id="' + s.id + '">Resume</button>'
+              : '<button type="button" class="btn" data-dummy-action="pause" data-id="' + s.id + '">Pause</button>') +
+            '<button type="button" class="btn danger" data-dummy-action="stop" data-id="' + s.id + '">Stop</button>' +
+            '</span></div>';
+        }).join('');
+      } catch (e) {
+        listEl.textContent = 'Could not load dummy streams';
+      }
+    }
+
+    document.getElementById('dummyList').addEventListener('click', async (ev) => {
+      const btn = ev.target.closest('[data-dummy-action]');
+      if (!btn) return;
+      const id = btn.getAttribute('data-id');
+      const action = btn.getAttribute('data-dummy-action');
+      const path = action === 'stop' ? 'stop' : (action === 'pause' ? 'pause' : 'resume');
+      try {
+        const r = await fetch('/streams/' + id + '/' + path, { method: 'POST' });
+        if (!r.ok) {
+          const data = await r.json().catch(() => ({}));
+          showMessage(data.error || 'Dummy action failed', false);
+          return;
+        }
+        await refreshDummyList();
+        showMessage('Dummy #' + id + ' ' + action + 'd.', true);
+      } catch (e) {
+        showMessage(String(e), false);
+      }
+    });
+
+    document.getElementById('startDummyBtn').onclick = async () => {
+      const title = document.getElementById('dummyTitle').value.trim();
+      if (!title) {
+        showMessage('Enter a dummy title', false);
+        return;
+      }
+      const delivery = document.querySelector('input[name="delivery"]:checked')?.value || 'auto';
+      try {
+        const r = await fetch('/streams/start-dummy', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, delivery }),
+        });
+        const data = await r.json();
+        if (!r.ok) {
+          showMessage(data.error || 'Could not start dummy', false);
+          return;
+        }
+        showMessage('Dummy #' + data.id + ' started — open watch link in a new viewer tab.', true);
+        await refreshDummyList();
+      } catch (e) {
+        showMessage(String(e), false);
+      }
+    };
+
+    refreshDummyList();
+    setInterval(refreshDummyList, 5000);
   </script>
 </body>
 </html>

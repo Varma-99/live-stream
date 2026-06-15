@@ -30,7 +30,7 @@ srs_compose -f "${SRS_COMPOSE_FILE}" pull
 if [[ -z "${SRS_CANDIDATE:-}" ]]; then
   CANDIDATE="$(ipconfig getifaddr en0 2>/dev/null || true)"
   if [[ -z "${CANDIDATE}" ]]; then
-    CANDIDATE="127.0.0.1"
+    CANDIDATE="10.255.51.126"
   fi
 else
   CANDIDATE="${SRS_CANDIDATE}"

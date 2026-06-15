@@ -6,6 +6,7 @@ import com.livestream.api.dto.IngestDemoRequest;
 import com.livestream.api.dto.JoinResponse;
 import com.livestream.api.dto.PresenceRequest;
 import com.livestream.api.dto.RoomSnapshot;
+import com.livestream.api.dto.StartDummyStreamRequest;
 import com.livestream.api.dto.StartStreamRequest;
 import com.livestream.api.dto.StreamResponse;
 import com.livestream.service.StreamService;
@@ -45,6 +46,13 @@ public class StreamResource {
     public StreamResponse startStream(@Valid StartStreamRequest request) {
         return streamService.startStream(
                 request.getBroadcasterId(), request.getTitle(), request.getDelivery());
+    }
+
+    @POST
+    @Path("/start-dummy")
+    @UnitOfWork
+    public StreamResponse startDummyStream(@Valid StartDummyStreamRequest request) {
+        return streamService.startDummyStream(request.getTitle(), request.getDelivery());
     }
 
     @POST

@@ -88,7 +88,9 @@ public class LiveStreamApplication extends Application<LiveStreamConfiguration> 
         environment.jersey().register(new IllegalStateExceptionMapper());
 
         if (configuration.isDevMode()) {
-            injector.getInstance(DevDataSeeder.class).seedIfEmpty();
+            DevDataSeeder seeder = injector.getInstance(DevDataSeeder.class);
+            seeder.seedIfEmpty();
+            seeder.ensureDummyBroadcaster();
             LOGGER.info("Dev mode: using embedded H2 database (config-dev.yml)");
         }
 

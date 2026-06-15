@@ -6,3 +6,7 @@ ON CONFLICT (username) DO NOTHING;
 INSERT INTO users (username, display_name, role)
 VALUES ('viewer1', 'Demo Viewer', 'VIEWER')
 ON CONFLICT (username) DO NOTHING;
+
+INSERT INTO users (username, display_name, role)
+VALUES ('dummy_streamer', 'Dummy Streamer', 'BROADCASTER')
+ON CONFLICT (username) DO NOTHING;

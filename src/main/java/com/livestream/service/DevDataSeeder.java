@@ -34,7 +34,29 @@ public class DevDataSeeder {
                 if (count == 0) {
                     session.persist(new User("broadcaster1", "Demo Broadcaster", UserRole.BROADCASTER));
                     session.persist(new User("viewer1", "Demo Viewer", UserRole.VIEWER));
-                    LOGGER.info("Seeded dev users: broadcaster1 (id=1), viewer1 (id=2)");
+                    session.persist(new User("dummy_streamer", "Dummy Streamer", UserRole.BROADCASTER));
+                    LOGGER.info("Seeded dev users: broadcaster1, viewer1, dummy_streamer");
+                }
+                transaction.commit();
+            } catch (RuntimeException e) {
+                transaction.rollback();
+                throw e;
+            }
+        }
+    }
+
+    /** H2 dev DB may predate dummy_streamer — add without wiping data. */
+    public void ensureDummyBroadcaster() {
+        try (Session session = sessionFactory.openSession()) {
+            Transaction transaction = session.beginTransaction();
+            try {
+                Long exists = session.createQuery(
+                                "SELECT COUNT(u) FROM User u WHERE u.username = :username", Long.class)
+                        .setParameter("username", "dummy_streamer")
+                        .getSingleResult();
+                if (exists == 0) {
+                    session.persist(new User("dummy_streamer", "Dummy Streamer", UserRole.BROADCASTER));
+                    LOGGER.info("Seeded dummy_streamer user");
                 }
                 transaction.commit();
             } catch (RuntimeException e) {

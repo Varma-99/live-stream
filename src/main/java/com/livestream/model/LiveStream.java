@@ -51,6 +51,10 @@ public class LiveStream {
     @Column(length = 16)
     private String delivery;
 
+    /** Test-pattern FFmpeg stream — independent of main camera; no broadcaster zombie stop. */
+    @Column(name = "dummy_stream", nullable = false)
+    private boolean dummyStream;
+
     public LiveStream() {
     }
 
@@ -132,5 +136,13 @@ public class LiveStream {
 
     public void setDelivery(String delivery) {
         this.delivery = delivery;
+    }
+
+    public boolean isDummyStream() {
+        return dummyStream;
+    }
+
+    public void setDummyStream(boolean dummyStream) {
+        this.dummyStream = dummyStream;
     }
 }
