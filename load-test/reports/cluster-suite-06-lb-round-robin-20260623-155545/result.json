@@ -1,0 +1,5 @@
+{
+  "status": "PASS",
+  "message": "LB routes to app-1 and app-2",
+  "finished_at": "2026-06-23T10:25:46.301762+00:00"
+}

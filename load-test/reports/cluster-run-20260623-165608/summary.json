@@ -1,0 +1,445 @@
+{
+  "run_id": "20260623-165608",
+  "profile": "full",
+  "generated_at": "2026-06-23T11:27:58.075152+00:00",
+  "tests": [
+    {
+      "id": "00-preflight-20260623-143633",
+      "status": "PASS",
+      "message": "all cluster components healthy",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-00-preflight-20260623-143633"
+    },
+    {
+      "id": "01-lb-lifecycle-20260623-143634",
+      "status": "UNKNOWN",
+      "message": "",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-01-lb-lifecycle-20260623-143634"
+    },
+    {
+      "id": "00-preflight-20260623-143853",
+      "status": "PASS",
+      "message": "all cluster components healthy",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-00-preflight-20260623-143853"
+    },
+    {
+      "id": "01-lb-lifecycle-20260623-143853",
+      "status": "UNKNOWN",
+      "message": "",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-01-lb-lifecycle-20260623-143853"
+    },
+    {
+      "id": "02-cross-instance-broadcaster-20260623-143855",
+      "status": "UNKNOWN",
+      "message": "",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-02-cross-instance-broadcaster-20260623-143855"
+    },
+    {
+      "id": "03-cross-instance-stop-20260623-143855",
+      "status": "UNKNOWN",
+      "message": "",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-03-cross-instance-stop-20260623-143855"
+    },
+    {
+      "id": "04-viewer-presence-20260623-143856",
+      "status": "UNKNOWN",
+      "message": "",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-04-viewer-presence-20260623-143856"
+    },
+    {
+      "id": "05-whep-2tier-20260623-143857",
+      "status": "PASS",
+      "message": "origin \u2192 playback forward \u2192 WHEP LB",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-05-whep-2tier-20260623-143857"
+    },
+    {
+      "id": "06-lb-round-robin-20260623-143903",
+      "status": "PASS",
+      "message": "LB routes to app-1 and app-2",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-06-lb-round-robin-20260623-143903"
+    },
+    {
+      "id": "07-redis-restart-grace-20260623-143906",
+      "status": "UNKNOWN",
+      "message": "",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-07-redis-restart-grace-20260623-143906"
+    },
+    {
+      "id": "00-preflight-20260623-144330",
+      "status": "PASS",
+      "message": "all cluster components healthy",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-00-preflight-20260623-144330"
+    },
+    {
+      "id": "01-lb-lifecycle-20260623-144331",
+      "status": "UNKNOWN",
+      "message": "",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-01-lb-lifecycle-20260623-144331"
+    },
+    {
+      "id": "01-lb-lifecycle-20260623-153142",
+      "status": "UNKNOWN",
+      "message": "",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-01-lb-lifecycle-20260623-153142"
+    },
+    {
+      "id": "01-lb-lifecycle-20260623-153624",
+      "status": "PASS",
+      "message": "pause/resume/stop via LB synced with Redis",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-01-lb-lifecycle-20260623-153624"
+    },
+    {
+      "id": "00-preflight-20260623-153741",
+      "status": "PASS",
+      "message": "all cluster components healthy",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-00-preflight-20260623-153741"
+    },
+    {
+      "id": "01-lb-lifecycle-20260623-153743",
+      "status": "PASS",
+      "message": "pause/resume/stop via LB synced with Redis",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-01-lb-lifecycle-20260623-153743"
+    },
+    {
+      "id": "02-cross-instance-broadcaster-20260623-153745",
+      "status": "UNKNOWN",
+      "message": "",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-02-cross-instance-broadcaster-20260623-153745"
+    },
+    {
+      "id": "02-cross-instance-broadcaster-20260623-154135",
+      "status": "PASS",
+      "message": "heartbeat via app-2 keeps stream alive on app-1",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-02-cross-instance-broadcaster-20260623-154135"
+    },
+    {
+      "id": "00-preflight-20260623-154235",
+      "status": "PASS",
+      "message": "all cluster components healthy",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-00-preflight-20260623-154235"
+    },
+    {
+      "id": "01-lb-lifecycle-20260623-154236",
+      "status": "PASS",
+      "message": "pause/resume/stop via LB synced with Redis",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-01-lb-lifecycle-20260623-154236"
+    },
+    {
+      "id": "02-cross-instance-broadcaster-20260623-154238",
+      "status": "PASS",
+      "message": "heartbeat via app-2 keeps stream alive on app-1",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-02-cross-instance-broadcaster-20260623-154238"
+    },
+    {
+      "id": "03-cross-instance-stop-20260623-154245",
+      "status": "PASS",
+      "message": "bidirectional cross-instance stop",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-03-cross-instance-stop-20260623-154245"
+    },
+    {
+      "id": "04-viewer-presence-20260623-154250",
+      "status": "PASS",
+      "message": "join/heartbeat/leave across instances",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-04-viewer-presence-20260623-154250"
+    },
+    {
+      "id": "05-whep-2tier-20260623-154253",
+      "status": "PASS",
+      "message": "origin \u2192 playback forward \u2192 WHEP LB",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-05-whep-2tier-20260623-154253"
+    },
+    {
+      "id": "06-lb-round-robin-20260623-154257",
+      "status": "PASS",
+      "message": "LB routes to app-1 and app-2",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-06-lb-round-robin-20260623-154257"
+    },
+    {
+      "id": "07-redis-restart-grace-20260623-154258",
+      "status": "PASS",
+      "message": "no false zombie stop during Redis restart grace",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-07-redis-restart-grace-20260623-154258"
+    },
+    {
+      "id": "08-srs-playback-kill-20260623-154332",
+      "status": "PASS",
+      "message": "playback kill breaks forward (documented SPOF)",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-08-srs-playback-kill-20260623-154332"
+    },
+    {
+      "id": "09-ffmpeg-watchdog-20260623-154407",
+      "status": "PASS",
+      "message": "FFmpeg death detected by app",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-09-ffmpeg-watchdog-20260623-154407"
+    },
+    {
+      "id": "10-k6-presence-20260623-154424",
+      "status": "UNKNOWN",
+      "message": "",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-10-k6-presence-20260623-154424"
+    },
+    {
+      "id": "10-k6-presence-20260623-155508",
+      "status": "UNKNOWN",
+      "message": "",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-10-k6-presence-20260623-155508"
+    },
+    {
+      "id": "00-preflight-20260623-155525",
+      "status": "PASS",
+      "message": "all cluster components healthy",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-00-preflight-20260623-155525"
+    },
+    {
+      "id": "01-lb-lifecycle-20260623-155527",
+      "status": "PASS",
+      "message": "pause/resume/stop via LB synced with Redis",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-01-lb-lifecycle-20260623-155527"
+    },
+    {
+      "id": "02-cross-instance-broadcaster-20260623-155528",
+      "status": "PASS",
+      "message": "heartbeat via app-2 keeps stream alive on app-1",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-02-cross-instance-broadcaster-20260623-155528"
+    },
+    {
+      "id": "03-cross-instance-stop-20260623-155534",
+      "status": "PASS",
+      "message": "bidirectional cross-instance stop",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-03-cross-instance-stop-20260623-155534"
+    },
+    {
+      "id": "04-viewer-presence-20260623-155538",
+      "status": "PASS",
+      "message": "join/heartbeat/leave across instances",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-04-viewer-presence-20260623-155538"
+    },
+    {
+      "id": "05-whep-2tier-20260623-155541",
+      "status": "PASS",
+      "message": "origin \u2192 playback forward \u2192 WHEP LB",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-05-whep-2tier-20260623-155541"
+    },
+    {
+      "id": "06-lb-round-robin-20260623-155545",
+      "status": "PASS",
+      "message": "LB routes to app-1 and app-2",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-06-lb-round-robin-20260623-155545"
+    },
+    {
+      "id": "07-redis-restart-grace-20260623-155546",
+      "status": "UNKNOWN",
+      "message": "",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-07-redis-restart-grace-20260623-155546"
+    },
+    {
+      "id": "08-srs-playback-kill-20260623-155650",
+      "status": "UNKNOWN",
+      "message": "",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-08-srs-playback-kill-20260623-155650"
+    },
+    {
+      "id": "00-preflight-20260623-160004",
+      "status": "FAIL",
+      "message": "preflight checks failed",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-00-preflight-20260623-160004"
+    },
+    {
+      "id": "01-lb-lifecycle-20260623-160019",
+      "status": "UNKNOWN",
+      "message": "",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-01-lb-lifecycle-20260623-160019"
+    },
+    {
+      "id": "00-preflight-20260623-160339",
+      "status": "PASS",
+      "message": "all cluster components healthy",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-00-preflight-20260623-160339"
+    },
+    {
+      "id": "01-lb-lifecycle-20260623-160340",
+      "status": "PASS",
+      "message": "pause/resume/stop via LB synced with Redis",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-01-lb-lifecycle-20260623-160340"
+    },
+    {
+      "id": "02-cross-instance-broadcaster-20260623-160342",
+      "status": "PASS",
+      "message": "heartbeat via app-2 keeps stream alive on app-1",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-02-cross-instance-broadcaster-20260623-160342"
+    },
+    {
+      "id": "03-cross-instance-stop-20260623-160348",
+      "status": "PASS",
+      "message": "bidirectional cross-instance stop",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-03-cross-instance-stop-20260623-160348"
+    },
+    {
+      "id": "04-viewer-presence-20260623-160353",
+      "status": "PASS",
+      "message": "join/heartbeat/leave across instances",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-04-viewer-presence-20260623-160353"
+    },
+    {
+      "id": "05-whep-2tier-20260623-160357",
+      "status": "PASS",
+      "message": "origin \u2192 playback forward \u2192 WHEP LB",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-05-whep-2tier-20260623-160357"
+    },
+    {
+      "id": "06-lb-round-robin-20260623-160401",
+      "status": "PASS",
+      "message": "LB routes to app-1 and app-2",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-06-lb-round-robin-20260623-160401"
+    },
+    {
+      "id": "07-redis-restart-grace-20260623-160402",
+      "status": "PASS",
+      "message": "no false zombie stop during Redis restart grace",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-07-redis-restart-grace-20260623-160402"
+    },
+    {
+      "id": "08-srs-playback-kill-20260623-160435",
+      "status": "PASS",
+      "message": "playback kill breaks forward (documented SPOF)",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-08-srs-playback-kill-20260623-160435"
+    },
+    {
+      "id": "09-ffmpeg-watchdog-20260623-160509",
+      "status": "PASS",
+      "message": "FFmpeg death detected by app",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-09-ffmpeg-watchdog-20260623-160509"
+    },
+    {
+      "id": "10-k6-presence-20260623-160525",
+      "status": "UNKNOWN",
+      "message": "",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-10-k6-presence-20260623-160525"
+    },
+    {
+      "id": "10-k6-presence-20260623-164125",
+      "status": "FAIL",
+      "message": "POST /streams/start failed (broadcaster 1 may already have a LIVE/PAUSED stream \u2014 run cluster_cleanup_streams)",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-10-k6-presence-20260623-164125"
+    },
+    {
+      "id": "00-preflight-20260623-164142",
+      "status": "FAIL",
+      "message": "preflight checks failed",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-00-preflight-20260623-164142"
+    },
+    {
+      "id": "01-lb-lifecycle-20260623-164142",
+      "status": "FAIL",
+      "message": "POST /streams/start failed (broadcaster 1 may already have a LIVE/PAUSED stream \u2014 run cluster_cleanup_streams)",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-01-lb-lifecycle-20260623-164142"
+    },
+    {
+      "id": "02-cross-instance-broadcaster-20260623-164143",
+      "status": "FAIL",
+      "message": "POST /streams/start failed (broadcaster 1 may already have a LIVE/PAUSED stream \u2014 run cluster_cleanup_streams)",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-02-cross-instance-broadcaster-20260623-164143"
+    },
+    {
+      "id": "03-cross-instance-stop-20260623-164145",
+      "status": "FAIL",
+      "message": "POST /streams/start failed (broadcaster 1 may already have a LIVE/PAUSED stream \u2014 run cluster_cleanup_streams)",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-03-cross-instance-stop-20260623-164145"
+    },
+    {
+      "id": "04-viewer-presence-20260623-164146",
+      "status": "FAIL",
+      "message": "POST /streams/start failed (broadcaster 1 may already have a LIVE/PAUSED stream \u2014 run cluster_cleanup_streams)",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-04-viewer-presence-20260623-164146"
+    },
+    {
+      "id": "05-whep-2tier-20260623-164147",
+      "status": "FAIL",
+      "message": "stream not on origin API",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-05-whep-2tier-20260623-164147"
+    },
+    {
+      "id": "06-lb-round-robin-20260623-164152",
+      "status": "PASS",
+      "message": "LB routes to app-1 and app-2",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-06-lb-round-robin-20260623-164152"
+    },
+    {
+      "id": "07-redis-restart-grace-20260623-164152",
+      "status": "FAIL",
+      "message": "POST /streams/start failed (broadcaster 1 may already have a LIVE/PAUSED stream \u2014 run cluster_cleanup_streams)",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-07-redis-restart-grace-20260623-164152"
+    },
+    {
+      "id": "08-srs-playback-kill-20260623-164154",
+      "status": "UNKNOWN",
+      "message": "",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-08-srs-playback-kill-20260623-164154"
+    },
+    {
+      "id": "00-preflight-20260623-165608",
+      "status": "PASS",
+      "message": "all cluster components healthy",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-00-preflight-20260623-165608"
+    },
+    {
+      "id": "01-lb-lifecycle-20260623-165610",
+      "status": "PASS",
+      "message": "pause/resume/stop via LB synced with Redis",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-01-lb-lifecycle-20260623-165610"
+    },
+    {
+      "id": "02-cross-instance-broadcaster-20260623-165612",
+      "status": "PASS",
+      "message": "heartbeat via app-2 keeps stream alive on app-1",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-02-cross-instance-broadcaster-20260623-165612"
+    },
+    {
+      "id": "03-cross-instance-stop-20260623-165617",
+      "status": "PASS",
+      "message": "bidirectional cross-instance stop",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-03-cross-instance-stop-20260623-165617"
+    },
+    {
+      "id": "04-viewer-presence-20260623-165622",
+      "status": "PASS",
+      "message": "join/heartbeat/leave across instances",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-04-viewer-presence-20260623-165622"
+    },
+    {
+      "id": "05-whep-2tier-20260623-165625",
+      "status": "PASS",
+      "message": "origin \u2192 playback forward \u2192 WHEP LB",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-05-whep-2tier-20260623-165625"
+    },
+    {
+      "id": "06-lb-round-robin-20260623-165629",
+      "status": "PASS",
+      "message": "LB routes to app-1 and app-2",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-06-lb-round-robin-20260623-165629"
+    },
+    {
+      "id": "07-redis-restart-grace-20260623-165630",
+      "status": "PASS",
+      "message": "no false zombie stop during Redis restart grace",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-07-redis-restart-grace-20260623-165630"
+    },
+    {
+      "id": "08-srs-playback-kill-20260623-165703",
+      "status": "PASS",
+      "message": "playback kill breaks forward (documented SPOF)",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-08-srs-playback-kill-20260623-165703"
+    },
+    {
+      "id": "09-ffmpeg-watchdog-20260623-165736",
+      "status": "PASS",
+      "message": "FFmpeg death detected by app",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-09-ffmpeg-watchdog-20260623-165736"
+    },
+    {
+      "id": "10-k6-presence-20260623-165752",
+      "status": "UNKNOWN",
+      "message": "",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-10-k6-presence-20260623-165752"
+    }
+  ]
+}

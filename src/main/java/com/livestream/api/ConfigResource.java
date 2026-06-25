@@ -31,6 +31,9 @@ public class ConfigResource {
 
     private String mediaServerStartScript() {
         if (configuration.isSrsDelivery()) {
+            if (configuration.isEdgeClusterMode()) {
+                return "SRS_CLUSTER_MODE=edge ./scripts/start-srs.sh";
+            }
             return "./scripts/start-srs.sh";
         }
         if (configuration.isMediamtxDelivery()) {

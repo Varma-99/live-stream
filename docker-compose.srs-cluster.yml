@@ -1,0 +1,57 @@
+# SRS edge cluster — origin ingest + 2 WebRTC edges + HAProxy WHEP LB
+# Usage: SRS_CLUSTER_MODE=edge ./scripts/start-srs.sh
+
+services:
+  srs-origin:
+    image: ossrs/srs:6
+    container_name: srs-origin
+    ports:
+      - "1935:1935"
+      - "1995:1985"
+      - "8000:8000/udp"
+    environment:
+      CANDIDATE: ${SRS_ORIGIN_CANDIDATE:-10.255.61.28:8000}
+    volumes:
+      - ./srs.origin.conf:/usr/local/srs/conf/srs.conf:ro
+    command: ["./objs/srs", "-c", "conf/srs.conf"]
+    restart: unless-stopped
+
+  srs-edge-1:
+    image: ossrs/srs:6
+    container_name: srs-edge-1
+    ports:
+      - "8001:8000/udp"
+    environment:
+      CANDIDATE: ${SRS_EDGE1_CANDIDATE:-10.255.61.28:8001}
+    volumes:
+      - ./srs.edge.conf:/usr/local/srs/conf/srs.conf:ro
+    depends_on:
+      - srs-origin
+    command: ["./objs/srs", "-c", "conf/srs.conf"]
+    restart: unless-stopped
+
+  srs-edge-2:
+    image: ossrs/srs:6
+    container_name: srs-edge-2
+    ports:
+      - "8002:8000/udp"
+    environment:
+      CANDIDATE: ${SRS_EDGE2_CANDIDATE:-10.255.61.28:8002}
+    volumes:
+      - ./srs.edge.conf:/usr/local/srs/conf/srs.conf:ro
+    depends_on:
+      - srs-origin
+    command: ["./objs/srs", "-c", "conf/srs.conf"]
+    restart: unless-stopped
+
+  srs-lb:
+    image: haproxy:3.0-alpine
+    container_name: srs-lb
+    ports:
+      - "1985:1985"
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      - srs-edge-1
+      - srs-edge-2
+    restart: unless-stopped

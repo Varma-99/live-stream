@@ -2,6 +2,7 @@ package com.livestream;
 
 import com.google.inject.Guice;
 import com.google.inject.Injector;
+import com.livestream.api.InternalStreamResource;
 import com.livestream.api.IllegalArgumentExceptionMapper;
 import com.livestream.api.IllegalStateExceptionMapper;
 import com.livestream.api.ConfigResource;
@@ -9,9 +10,11 @@ import com.livestream.api.StreamQoSResource;
 import com.livestream.api.StreamResource;
 import com.livestream.api.WhepProxyResource;
 import com.livestream.health.AppHealthCheck;
+import com.livestream.health.RedisHealthCheck;
 import com.livestream.service.DevDataSeeder;
 import com.livestream.mediamtx.IngestHealthService;
 import com.livestream.realtime.BroadcasterControlService;
+import com.livestream.redis.RedisService;
 import com.livestream.service.VideoService;
 import com.livestream.web.HlsAssetServlet;
 import com.livestream.model.LiveStream;
@@ -74,13 +77,25 @@ public class LiveStreamApplication extends Application<LiveStreamConfiguration> 
                         environment.getObjectMapper()));
 
         VideoService videoService = injector.getInstance(VideoService.class);
+        RedisService redisService = injector.getInstance(RedisService.class);
+        environment.lifecycle().manage(redisService);
         environment.lifecycle().manage(videoService);
         environment.lifecycle().manage(injector.getInstance(IngestHealthService.class));
         environment.lifecycle().manage(injector.getInstance(BroadcasterControlService.class));
         HlsAssetServlet.register(environment, configuration.getHlsOutputDir());
 
         environment.healthChecks().register("app", new AppHealthCheck());
+        if (configuration.isRedisEnabled()) {
+            environment.healthChecks().register("redis", new RedisHealthCheck(redisService));
+        }
+        if (configuration.isRedisEnabled() && configuration.isInternalApiEnabled()) {
+            LOGGER.info(
+                    "Multi-instance control: instanceId={}, peers={}, internal API enabled",
+                    configuration.getInstanceId(),
+                    configuration.getPeerInstances().size());
+        }
         environment.jersey().register(injector.getInstance(StreamResource.class));
+        environment.jersey().register(injector.getInstance(InternalStreamResource.class));
         environment.jersey().register(injector.getInstance(StreamQoSResource.class));
         environment.jersey().register(injector.getInstance(WhepProxyResource.class));
         environment.jersey().register(injector.getInstance(ConfigResource.class));
@@ -100,7 +115,14 @@ public class LiveStreamApplication extends Application<LiveStreamConfiguration> 
             LOGGER.info("Viewer list: ingest liveness filter ON (SRS/MediaMTX publish required)");
         }
         if (configuration.isSrsDelivery()) {
-            LOGGER.info("Media server: SRS (./scripts/start-srs.sh) — WHEP proxied to {}", configuration.getSrsWhepBase());
+            if (configuration.isEdgeClusterMode()) {
+                LOGGER.info(
+                        "Media server: SRS edge cluster — WHEP via LB {}, ingest API on origin {}",
+                        configuration.getSrsWhepBase(),
+                        configuration.getSrsApiBase());
+            } else {
+                LOGGER.info("Media server: SRS (./scripts/start-srs.sh) — WHEP proxied to {}", configuration.getSrsWhepBase());
+            }
         } else if (configuration.isMediamtxDelivery()) {
             LOGGER.info("Media server: MediaMTX (./scripts/start-mediamtx.sh) — WHEP proxied to {}", configuration.getMediamtxWebrtcBase());
         }

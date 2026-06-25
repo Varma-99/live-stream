@@ -52,6 +52,9 @@ public class QoSViewerSessionRecord {
     @Column(name = "download_kbps")
     private Long downloadKbps;
 
+    @Column(name = "avg_delay_ms")
+    private Long avgDelayMs;
+
     public Long getId() {
         return id;
     }
@@ -146,5 +149,13 @@ public class QoSViewerSessionRecord {
 
     public void setDownloadKbps(Long downloadKbps) {
         this.downloadKbps = downloadKbps;
+    }
+
+    public Long getAvgDelayMs() {
+        return avgDelayMs;
+    }
+
+    public void setAvgDelayMs(Long avgDelayMs) {
+        this.avgDelayMs = avgDelayMs;
     }
 }

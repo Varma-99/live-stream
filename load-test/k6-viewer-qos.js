@@ -27,6 +27,10 @@ const HEARTBEAT_ROUNDS = parseInt(__ENV.HEARTBEAT_ROUNDS || '20', 10);
 const HEARTBEAT_INTERVAL_SEC = parseFloat(__ENV.HEARTBEAT_INTERVAL_SEC || '2');
 const LIKE_CHANCE = parseFloat(__ENV.LIKE_CHANCE || '0.08');
 const ROOM_POLL_EVERY = parseInt(__ENV.ROOM_POLL_EVERY || '8', 10);
+const THRESHOLD_HTTP_FAIL = parseFloat(__ENV.THRESHOLD_HTTP_FAIL || '0.08');
+const THRESHOLD_JOIN_OK = parseFloat(__ENV.THRESHOLD_JOIN_OK || '0.92');
+const THRESHOLD_QOS_OK = parseFloat(__ENV.THRESHOLD_QOS_OK || '0.92');
+const THRESHOLD_P95_MS = parseFloat(__ENV.THRESHOLD_P95_MS || '2500');
 
 const qosStatsOk = new Rate('qos_stats_ok');
 const qosEventOk = new Rate('qos_event_ok');
@@ -60,38 +64,50 @@ export const options = {
     },
   },
   thresholds: {
-    http_req_failed: ['rate<0.08'],
-    http_req_duration: ['p(95)<2500'],
-    join_ok: ['rate>0.92'],
-    qos_stats_ok: ['rate>0.92'],
+    http_req_failed: [`rate<${THRESHOLD_HTTP_FAIL}`],
+    http_req_duration: [`p(95)<${THRESHOLD_P95_MS}`],
+    join_ok: [`rate>${THRESHOLD_JOIN_OK}`],
+    qos_stats_ok: [`rate>${THRESHOLD_QOS_OK}`],
   },
 };
 
 export function setup() {
-  const res = http.get(`${BASE_URL}/streams`);
-  if (res.status !== 200) {
-    throw new Error(`GET /streams failed (${res.status}). Is the app running?`);
-  }
-  const live = JSON.parse(res.body);
-  if (!live.length) {
-    throw new Error(
-      'No LIVE stream. Start ONE stream on the broadcast page, then run k6.'
-    );
-  }
-  const ids = live.map((s) => s.id);
-  if (STREAM_ID_ENV) {
-    const match = live.find((s) => String(s.id) === STREAM_ID_ENV);
-    if (!match) {
+  const maxAttempts = STREAM_ID_ENV ? 30 : 1;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const res = http.get(`${BASE_URL}/streams`);
+    if (res.status !== 200) {
+      throw new Error(`GET /streams failed (${res.status}). Is the app running?`);
+    }
+    const live = JSON.parse(res.body);
+    if (STREAM_ID_ENV) {
+      const match = live.find((s) => String(s.id) === STREAM_ID_ENV);
+      if (match) {
+        console.log(`k6 stream id=${STREAM_ID_ENV} (${match.title}), peak VUs=${TARGET_VUS}`);
+        return { streamId: STREAM_ID_ENV };
+      }
+      if (attempt + 1 < maxAttempts) {
+        sleep(2);
+        continue;
+      }
+      const ids = live.map((s) => s.id);
       throw new Error(
         `STREAM_ID=${STREAM_ID_ENV} is not live. Live now: [${ids.join(', ')}].`
       );
     }
-    console.log(`k6 stream id=${STREAM_ID_ENV} (${match.title}), peak VUs=${TARGET_VUS}`);
-    return { streamId: STREAM_ID_ENV };
+    if (live.length) {
+      const pick = live[0];
+      console.log(`k6 stream id=${pick.id} (${pick.title}), peak VUs=${TARGET_VUS}`);
+      return { streamId: String(pick.id) };
+    }
+    if (attempt + 1 < maxAttempts) {
+      sleep(2);
+      continue;
+    }
+    throw new Error(
+      'No LIVE stream. Start ONE stream on the broadcast page, then run k6.'
+    );
   }
-  const pick = live[0];
-  console.log(`k6 stream id=${pick.id} (${pick.title}), peak VUs=${TARGET_VUS}`);
-  return { streamId: String(pick.id) };
+  throw new Error('setup failed');
 }
 
 function jsonHeaders() {

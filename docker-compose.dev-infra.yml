@@ -1,0 +1,36 @@
+# Shared dev backing services (PostgreSQL + Redis).
+# Usage:
+#   docker-compose -f docker-compose.dev-infra.yml up -d
+#   docker-compose -f docker-compose.dev-infra.yml down
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: livestream-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: livestream
+      POSTGRES_USER: livestream
+      POSTGRES_PASSWORD: change-me
+    volumes:
+      - ./src/main/resources/db/migration/V1__schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      - ./src/main/resources/db/migration/V2__seed_dev_users.sql:/docker-entrypoint-initdb.d/02-seed.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U livestream -d livestream"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: livestream-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "PING"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped

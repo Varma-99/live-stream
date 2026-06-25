@@ -45,7 +45,7 @@ videoInput: test
 useTestVideo: true
 rtmpPort: 1935
 
-publicWebBase: http://10.255.51.126:8080
+publicWebBase: http://10.255.61.28:8080
 
 streamDelivery: srs
 # Media plane — RTMP ingest target for FFmpeg (127.0.0.1 if SRS on same Mac)

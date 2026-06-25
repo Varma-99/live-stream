@@ -1,0 +1,10 @@
+{
+  "backend": "srs-cluster",
+  "cluster_mode": "edge",
+  "timestamp": "2026-06-16T09:49:54Z",
+  "base_url": "http://10.255.52.8:8080",
+  "origin_api": "http://127.0.0.1:1995",
+  "whep_lb": "http://127.0.0.1:1985",
+  "stream_id": "1",
+  "stream_key": "Hwv2i4Zeznt3HjL0xGg9S9-nn5QZOfhK"
+}

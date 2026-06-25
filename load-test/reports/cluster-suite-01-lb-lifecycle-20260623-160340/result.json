@@ -1,0 +1,5 @@
+{
+  "status": "PASS",
+  "message": "pause/resume/stop via LB synced with Redis",
+  "finished_at": "2026-06-23T10:33:42.523374+00:00"
+}

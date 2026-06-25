@@ -1,0 +1,5 @@
+{
+  "status": "PASS",
+  "message": "k6 heavy presence (600 VUs peak, 420s scenario)",
+  "finished_at": "2026-06-23T11:37:58.992329+00:00"
+}

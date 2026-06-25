@@ -57,6 +57,8 @@ final class StreamQoSSession {
     private final AtomicLong webrtcLossMilliSum = new AtomicLong(0);
     private final AtomicLong webrtcRttSum = new AtomicLong(0);
     private final AtomicLong webrtcJitterMilliSum = new AtomicLong(0);
+    private final AtomicLong webrtcDelaySum = new AtomicLong(0);
+    private final AtomicInteger webrtcDelaySampleCount = new AtomicInteger(0);
 
     private final AtomicInteger viewerJoinOk = new AtomicInteger(0);
     private final AtomicInteger viewerJoinFail = new AtomicInteger(0);
@@ -264,16 +266,21 @@ final class StreamQoSSession {
             double packetLossPct,
             long rttMs,
             double jitterMs,
-            long downloadKbps) {
+            long downloadKbps,
+            long avgDelayMs) {
         if (presenceId == null || presenceId.isBlank()) {
             return;
         }
         ViewerSessionState vs = viewerSession(presenceId);
-        vs.updateStats(qualityLabel, packetLossPct, rttMs, jitterMs, downloadKbps);
+        vs.updateStats(qualityLabel, packetLossPct, rttMs, jitterMs, downloadKbps, avgDelayMs);
         webrtcStatsSampleCount.incrementAndGet();
         webrtcLossMilliSum.addAndGet(Math.round(packetLossPct * 1000));
         webrtcRttSum.addAndGet(rttMs);
         webrtcJitterMilliSum.addAndGet(Math.round(jitterMs * 1000));
+        if (avgDelayMs > 0) {
+            webrtcDelaySum.addAndGet(avgDelayMs);
+            webrtcDelaySampleCount.incrementAndGet();
+        }
     }
 
     private void markDeliveryIssueStart() {
@@ -317,6 +324,11 @@ final class StreamQoSSession {
     double avgJitterMs() {
         int n = webrtcStatsSampleCount.get();
         return n == 0 ? 0 : (webrtcJitterMilliSum.get() / 1000.0) / n;
+    }
+
+    long avgDelayMs() {
+        int n = webrtcDelaySampleCount.get();
+        return n == 0 ? 0 : webrtcDelaySum.get() / n;
     }
 
     long deliveryMttdMs() {
@@ -654,7 +666,10 @@ final class StreamQoSSession {
     }
 
     long viewerWatchMsTotal() {
-        return viewerWatchMsTotal.get();
+        if (finalized) {
+            return viewerWatchMsTotal.get();
+        }
+        return viewers.values().stream().mapToLong(ViewerSessionState::watchDurationMs).sum();
     }
 
     static final class ViewerSessionState {
@@ -670,6 +685,7 @@ final class StreamQoSSession {
         private volatile long rttMs;
         private volatile double jitterMs;
         private volatile long downloadKbps;
+        private volatile long avgDelayMs;
 
         ViewerSessionState(String presenceId) {
             this.presenceId = presenceId;
@@ -693,7 +709,7 @@ final class StreamQoSSession {
             }
         }
 
-        void updateStats(String label, double loss, long rtt, double jitter, long kbps) {
+        void updateStats(String label, double loss, long rtt, double jitter, long kbps, long delayMs) {
             if (label != null && !label.isBlank()) {
                 qualityLabel = label;
             }
@@ -701,6 +717,9 @@ final class StreamQoSSession {
             rttMs = rtt;
             jitterMs = jitter;
             downloadKbps = kbps;
+            if (delayMs > 0) {
+                avgDelayMs = delayMs;
+            }
         }
 
         void close() {
@@ -731,7 +750,8 @@ final class StreamQoSSession {
                     packetLossPct,
                     rttMs,
                     jitterMs,
-                    downloadKbps);
+                    downloadKbps,
+                    avgDelayMs);
         }
     }
 }

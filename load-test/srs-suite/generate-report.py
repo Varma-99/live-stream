@@ -57,17 +57,21 @@ def ingest_kbps(qos_path: Path) -> int | None:
 def main() -> int:
     root = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("load-test/reports")
     run_id = sys.argv[2] if len(sys.argv) > 2 else datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-    out_dir = root / f"srs-phase5-run-{run_id}"
+    mode = sys.argv[3] if len(sys.argv) > 3 else "phase5"
+    is_cluster = mode == "cluster"
+    prefix = "srs-cluster-suite" if is_cluster else "srs-suite"
+    out_name = f"srs-cluster-run-{run_id}" if is_cluster else f"srs-phase5-run-{run_id}"
+    out_dir = root / out_name
     out_dir.mkdir(parents=True, exist_ok=True)
 
     dirs = sorted(
-        [p for p in root.glob("srs-suite-*") if p.is_dir()],
+        [p for p in root.glob(f"{prefix}-*") if p.is_dir()],
         key=lambda p: p.stat().st_mtime,
     )
 
     sections = []
     summary = {
-        "backend": "srs",
+        "backend": "srs-cluster" if is_cluster else "srs",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "run_id": run_id,
         "tests": [],
@@ -85,10 +89,20 @@ def main() -> int:
             ("k6-viewers-summary.json", "k6_viewers"),
             ("k6-viewers-600-summary.json", "k6_viewers_600"),
             ("k6-whep-summary.json", "k6_whep"),
+            ("k6-whep-before-failover.json", "k6_whep_before_failover"),
+            ("k6-whep-after-failover.json", "k6_whep_after_failover"),
+            ("failover-summary.json", "failover_summary"),
+            ("ttff-summary.json", "ttff_summary"),
+            ("pull-efficiency-summary.json", "pull_efficiency_summary"),
         ]:
             p = d / pattern
             if p.exists():
-                entry[key] = k6_metrics(p)
+                if key.endswith("_summary"):
+                    data = load_json(p)
+                    if data:
+                        entry[key] = data
+                else:
+                    entry[key] = k6_metrics(p)
 
         for qos_file in sorted(d.glob("qos-*.json")):
             kbps = ingest_kbps(qos_file)
@@ -117,17 +131,32 @@ def main() -> int:
             sections.append(f"- k6 WHEP: ok rate={kw.get('whep_handshake_ok', {}).get('rate')}, p95={kw.get('whep_handshake_duration', {}).get('p95')}ms\n")
         if entry.get("ingest_kbps"):
             sections.append(f"- ingest kbps samples: {entry['ingest_kbps']}\n")
+        if entry.get("failover_summary"):
+            fs = entry["failover_summary"]
+            sections.append(f"- failover: overall_pass={fs.get('overall_pass')}, before={fs.get('whep_ok_rate_before')}, after={fs.get('whep_ok_rate_after')}\n")
+        if entry.get("ttff_summary"):
+            ts = entry["ttff_summary"]
+            sections.append(f"- TTFF cold first WHEP: {ts.get('cold_first_whep_sec')}s, pass={ts.get('pass_cold_whep')}\n")
+        if entry.get("pull_efficiency_summary"):
+            ps = entry["pull_efficiency_summary"]
+            sections.append(
+                f"- pull efficiency: pass={ps.get('overall_pass')}, "
+                f"abr pulls min/max={ps.get('abr_pull_clients_min')}/{ps.get('abr_pull_clients_max')}\n"
+            )
         if entry.get("srs_active_streams"):
             sections.append(f"- SRS active streams: {entry['srs_active_streams']}\n")
         sections.append(f"- artifacts: `{d}`\n\n")
 
-    json_path = out_dir / "SRS-PHASE5-SUMMARY.json"
-    md_path = out_dir / "SRS-PHASE5-REPORT.md"
+    json_name = "SRS-CLUSTER-SUMMARY.json" if is_cluster else "SRS-PHASE5-SUMMARY.json"
+    md_name = "SRS-CLUSTER-REPORT.md" if is_cluster else "SRS-PHASE5-REPORT.md"
+    json_path = out_dir / json_name
+    md_path = out_dir / md_name
 
     json_path.write_text(json.dumps(summary, indent=2) + "\n")
 
+    title = "SRS Edge Cluster — Test Report" if is_cluster else "SRS Phase 5 — Load Test Report"
     md = [
-        "# SRS Phase 5 — Load Test Report",
+        f"# {title}",
         "",
         f"Generated: {summary['generated_at']}",
         f"Run id: `{run_id}`",
@@ -149,17 +178,28 @@ def main() -> int:
         "## How to re-run",
         "",
         "```bash",
-        "./scripts/start-srs.sh",
-        "./mvnw server config/config-dev.yml",
-        "# Start ONE broadcast on broadcast.html",
-        "./load-test/srs-suite/run-all.sh",
-        "```",
-        "",
-        "## MediaMTX comparison",
-        "",
-        "Run the same suite later with `MEDIA_BACKEND=mediamtx` (when you are ready).",
-        "",
     ])
+    if is_cluster:
+        md.extend([
+            "colima start --port-forwarder=grpc",
+            "SRS_CLUSTER_MODE=edge ./scripts/start-srs.sh",
+            "./mvnw server config/config-dev-cluster.yml",
+            "./load-test/srs-suite/run-all-cluster.sh",
+            "```",
+        ])
+    else:
+        md.extend([
+            "./scripts/start-srs.sh",
+            "./mvnw server config/config-dev.yml",
+            "# Start ONE broadcast on broadcast.html",
+            "./load-test/srs-suite/run-all.sh",
+            "```",
+            "",
+            "## MediaMTX comparison",
+            "",
+            "Run the same suite later with `MEDIA_BACKEND=mediamtx` (when you are ready).",
+        ])
+    md.extend(["", ""])
 
     md_path.write_text("\n".join(md))
     print(f"Wrote {json_path}")

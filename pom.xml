@@ -20,6 +20,7 @@
         <guice.version>7.0.0</guice.version>
         <postgresql.version>42.7.7</postgresql.version>
         <h2.version>2.2.224</h2.version>
+        <jedis.version>5.2.0</jedis.version>
         <junit.version>5.11.4</junit.version>
         <mockito.version>5.14.2</mockito.version>
         <mainClass>com.livestream.LiveStreamApplication</mainClass>
@@ -72,6 +73,13 @@
             <groupId>com.google.inject</groupId>
             <artifactId>guice</artifactId>
             <version>${guice.version}</version>
+        </dependency>
+
+        <!-- Redis (Phase 3+) -->
+        <dependency>
+            <groupId>redis.clients</groupId>
+            <artifactId>jedis</artifactId>
+            <version>${jedis.version}</version>
         </dependency>
 
         <dependency>

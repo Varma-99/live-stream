@@ -12,8 +12,8 @@ public final class FfmpegCommandBuilder {
     /** Keyframe every 30 frames @ 30fps ≈ 1s (HLS). */
     private static final String GOP_FRAMES = "30";
 
-    /** MediaMTX WebRTC: 15 frames @ 30fps ≈ 0.5s between keyframes. */
-    private static final String GOP_FRAMES_MEDIAMTX = "15";
+    /** WebRTC/RTMP: 30 frames @ 30fps ≈ 1s between keyframes (reduces aligned ABR keyframe spikes). */
+    private static final String GOP_FRAMES_MEDIAMTX = "30";
 
     private static final String GOP_FRAMES_DEGRADED = "5";
 
@@ -243,6 +243,7 @@ public final class FfmpegCommandBuilder {
         command.add("1280x720");
         command.add("-i");
         command.add(device);
+        appendAvfoundationCaptureSync(command);
         appendMediamtxWebrtcEncoding(command);
         appendFlvPublish(command, rtmpPublishUrl);
         return command;
@@ -270,6 +271,7 @@ public final class FfmpegCommandBuilder {
         command.add("1280x720");
         command.add("-i");
         command.add(device);
+        appendAvfoundationCaptureSync(command);
         command.add("-filter_complex");
         command.add(degraded ? ABR_FILTER_DEGRADED : ABR_FILTER_NORMAL);
         if (degraded) {
@@ -386,6 +388,14 @@ public final class FfmpegCommandBuilder {
         command.add("nobuffer");
         command.add("-flags");
         command.add("low_delay");
+    }
+
+    /** Constant frame rate + A/V sync for live avfoundation capture (avoids PTS gaps on RTMP). */
+    private static void appendAvfoundationCaptureSync(List<String> command) {
+        command.add("-vsync");
+        command.add("cfr");
+        command.add("-async");
+        command.add("1");
     }
 
     /**

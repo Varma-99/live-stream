@@ -141,6 +141,7 @@
                 <th>↓ kbps</th>
                 <th>Loss %</th>
                 <th>RTT</th>
+                <th>Delay</th>
                 <th>Stalls</th>
                 <th>ABR</th>
                 <th>TTFF</th>
@@ -367,6 +368,7 @@
           '<td class="' + levelByKbps(s.downloadKbps || 0) + '">' + (s.downloadKbps || 0) + '</td>' +
           '<td class="' + lossCls + '">' + loss + '</td>' +
           '<td class="' + rttCls + '">' + (s.rttMs || 0) + '</td>' +
+          '<td>' + fmtMs(s.avgDelayMs) + '</td>' +
           '<td class="' + stallCls + '">' + (s.stalls || 0) + '</td>' +
           '<td>' + (s.qualitySwitches || 0) + '</td>' +
           '<td>' + fmtMs(s.ttffMs) + '</td></tr>';
@@ -480,6 +482,7 @@
             : metricTile('Reconnects', del.reconnectCount ?? 0, 'WHEP', levelByCount(del.reconnectCount || 0, 1, 4)) +
               metricTile('Loss', (del.avgPacketLossPct != null ? del.avgPacketLossPct.toFixed(1) : '0') + '%', 'WebRTC', levelByLoss(del.avgPacketLossPct || 0)) +
               metricTile('RTT', (del.avgRttMs ?? 0) + ' ms', 'ICE', levelByRtt(del.avgRttMs || 0)) +
+              metricTile('Delay', fmtMs(del.avgDelayMs), 'playout est.', (del.avgDelayMs || 0) > 1500 ? 'warn' : 'good') +
               metricTile('Jitter', (del.avgJitterMs != null ? del.avgJitterMs.toFixed(1) : '0') + ' ms', '', del.avgJitterMs > 30 ? 'warn' : 'good')) +
           metricTile('Del MTTD', fmtMs(ops.deliveryMttdMs), 'detect', 'warn') +
           metricTile('Del MTTR', fmtMs(ops.deliveryMttrMs), 'recover', 'good')

@@ -35,6 +35,9 @@ public class ViewerDeliveryQoSDto {
     @JsonProperty
     private int deliveryHealthScore;
 
+    @JsonProperty
+    private long avgDelayMs;
+
     public ViewerDeliveryQoSDto() {}
 
     public ViewerDeliveryQoSDto(
@@ -74,5 +77,17 @@ public class ViewerDeliveryQoSDto {
 
     public int getDeliveryHealthScore() {
         return deliveryHealthScore;
+    }
+
+    public String getDeliveryMode() {
+        return deliveryMode;
+    }
+
+    public long getAvgDelayMs() {
+        return avgDelayMs;
+    }
+
+    public void setAvgDelayMs(long avgDelayMs) {
+        this.avgDelayMs = avgDelayMs;
     }
 }

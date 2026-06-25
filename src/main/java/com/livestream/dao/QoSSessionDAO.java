@@ -69,6 +69,7 @@ public class QoSSessionDAO extends AbstractDAO<QoSSessionRecord> {
             vr.setRttMs(vs.getRttMs());
             vr.setJitterMs(vs.getJitterMs());
             vr.setDownloadKbps(vs.getDownloadKbps());
+            vr.setAvgDelayMs(vs.getAvgDelayMs());
             currentSession().persist(vr);
         }
 

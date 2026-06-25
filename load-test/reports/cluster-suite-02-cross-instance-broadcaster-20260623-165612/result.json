@@ -1,0 +1,5 @@
+{
+  "status": "PASS",
+  "message": "heartbeat via app-2 keeps stream alive on app-1",
+  "finished_at": "2026-06-23T11:26:16.778043+00:00"
+}

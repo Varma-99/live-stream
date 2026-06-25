@@ -1,0 +1,40 @@
+# SRS 2-tier stack — RTMP origin (forwards) + standalone playback WHEP + HAProxy LB
+# SRS 6 disables WebRTC on cluster remote nodes — playback uses standalone rtmp_to_rtc.
+# Usage: SRS_STACK=2tier ./scripts/start-srs.sh
+
+services:
+  srs-origin:
+    image: ossrs/srs:6
+    container_name: srs-origin
+    ports:
+      - "1935:1935"
+      - "1995:1985"
+    volumes:
+      - ./srs.origin.rtmp.conf:/usr/local/srs/conf/srs.conf:ro
+    command: ["./objs/srs", "-c", "conf/srs.conf"]
+    restart: unless-stopped
+
+  srs-playback-1:
+    image: ossrs/srs:6
+    container_name: srs-playback-1
+    ports:
+      - "8000:8000/udp"
+    environment:
+      CANDIDATE: ${SRS_PLAYBACK_CANDIDATE:-10.255.61.28:8000}
+    volumes:
+      - ./srs.playback.conf:/usr/local/srs/conf/srs.conf:ro
+    depends_on:
+      - srs-origin
+    command: ["./objs/srs", "-c", "conf/srs.conf"]
+    restart: unless-stopped
+
+  srs-whep-lb:
+    image: haproxy:3.0-alpine
+    container_name: srs-whep-lb
+    ports:
+      - "1985:1985"
+    volumes:
+      - ./haproxy-srs.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      - srs-playback-1
+    restart: unless-stopped

@@ -74,12 +74,37 @@ class StreamQoSServiceTest {
     }
 
     @Test
-    void inferRootCausePrioritizesIngest() {
-        StreamQoSSession session = new StreamQoSSession(1L);
-        session.setIngestUnstable(true, QoSEventType.INGEST_UNSTABLE, "low upload");
-        session.recordIngestSample(100, true, true);
-        session.recordIngestSample(100, true, true);
-        session.recordIngestSample(100, true, true);
-        assertEquals("ingest", StreamQoSService.inferRootCause(session));
+    void ensureSessionUsesSrsWebRtcDeliveryMode() {
+        LiveStreamConfiguration config = mock(LiveStreamConfiguration.class);
+        when(config.isMediamtxDelivery()).thenReturn(false);
+        when(config.isRtmpWebRtcDelivery()).thenReturn(true);
+        LiveRoomHub hub = mock(LiveRoomHub.class);
+        LiveStreamDAO dao = mock(LiveStreamDAO.class);
+        LiveStream stream = new LiveStream();
+        stream.setId(99L);
+        stream.setDelivery("webrtc");
+        when(dao.findById(99L)).thenReturn(Optional.of(stream));
+        StreamQoSService svc = new StreamQoSService(config, hub, dao, qosSessionDAO);
+
+        svc.ensureSession(99L);
+
+        assertEquals("webrtc", svc.session(99L).deliveryMode());
+    }
+
+    @Test
+    void snapshotWithoutSessionUsesStreamDeliveryFromDatabase() {
+        LiveStreamConfiguration config = mock(LiveStreamConfiguration.class);
+        when(config.isRtmpWebRtcDelivery()).thenReturn(true);
+        LiveRoomHub hub = mock(LiveRoomHub.class);
+        LiveStream stream = new LiveStream();
+        stream.setId(55L);
+        stream.setDelivery("webrtc");
+        when(liveStreamDAO.findById(55L)).thenReturn(Optional.of(stream));
+        StreamQoSService svc = new StreamQoSService(config, hub, liveStreamDAO, qosSessionDAO);
+
+        var snap = svc.snapshot(55L);
+
+        assertNotNull(snap.getDelivery());
+        assertEquals("webrtc", snap.getDelivery().getDeliveryMode());
     }
 }

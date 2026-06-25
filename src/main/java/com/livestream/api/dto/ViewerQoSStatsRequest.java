@@ -22,6 +22,9 @@ public class ViewerQoSStatsRequest {
     @JsonProperty
     private Long downloadKbps;
 
+    @JsonProperty
+    private Long avgDelayMs;
+
     public String getPresenceId() {
         return presenceId;
     }
@@ -68,5 +71,13 @@ public class ViewerQoSStatsRequest {
 
     public void setDownloadKbps(Long downloadKbps) {
         this.downloadKbps = downloadKbps;
+    }
+
+    public Long getAvgDelayMs() {
+        return avgDelayMs;
+    }
+
+    public void setAvgDelayMs(Long avgDelayMs) {
+        this.avgDelayMs = avgDelayMs;
     }
 }

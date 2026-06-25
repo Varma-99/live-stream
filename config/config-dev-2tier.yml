@@ -1,0 +1,70 @@
+# Local dev with SRS 2-tier stack (RTMP origin + playback WHEP LB)
+# 1) docker-compose -f docker-compose.dev-infra.yml up -d   (optional Postgres/Redis)
+# 2) SRS_STACK=2tier ./scripts/start-srs.sh
+# 3) ./mvnw -Dexec.args="server config/config-dev-2tier.yml" compile exec:java
+
+server:
+  applicationConnectors:
+    - type: http
+      port: 8080
+      bindHost: 0.0.0.0
+  adminConnectors:
+    - type: http
+      port: 8081
+      bindHost: 0.0.0.0
+
+logging:
+  level: INFO
+  loggers:
+    com.livestream: DEBUG
+    org.hibernate.engine.internal.StatisticalLoggingSessionEventListener: WARN
+
+devMode: true
+
+database:
+  driverClass: org.h2.Driver
+  url: jdbc:h2:mem:livestream-dev;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
+  user: sa
+  password: ""
+  properties:
+    hibernate.dialect: org.hibernate.dialect.H2Dialect
+    hibernate.hbm2ddl.auto: update
+    hibernate.show_sql: false
+  maxWaitForConnection: 1s
+  validationQuery: "SELECT 1"
+  initialSize: 1
+  minSize: 1
+  maxSize: 128
+
+ffmpegPath: /opt/homebrew/bin/ffmpeg
+hlsOutputDir: ./data/hls
+videoInput: camera
+cameraDevice: "0:0"
+useTestVideo: false
+rtmpPort: 1935
+
+publicWebBase: http://10.255.61.28:8080
+
+streamDelivery: srs
+clusterMode: single
+srsRtmpPublishBase: rtmp://127.0.0.1:1935
+srsWhepBase: http://127.0.0.1:1985
+srsApiBase: http://127.0.0.1:1995
+srsApiEnabled: true
+abrEnabled: true
+
+encoderMode: local
+ingestLivenessFilter: true
+
+instanceId: app-1
+redisEnabled: true
+redis:
+  host: 127.0.0.1
+  port: 6379
+  password: ""
+  timeoutMs: 2000
+
+mediamtxRtmpPublishBase: rtmp://127.0.0.1:1935
+mediamtxWebrtcBase: http://127.0.0.1:8889
+mediamtxApiBase: http://127.0.0.1:9997
+mediamtxApiEnabled: false

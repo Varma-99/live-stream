@@ -15,6 +15,7 @@ import com.livestream.dao.LiveStreamDAO;
 import com.livestream.dao.QoSSessionDAO;
 import com.livestream.model.LiveStream;
 import com.livestream.realtime.LiveRoomHub;
+import java.util.Locale;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
@@ -58,7 +59,7 @@ public class StreamQoSService {
         sessions.computeIfAbsent(streamId, id -> {
             StreamQoSSession session = new StreamQoSSession(id);
             session.setEncodeTargetFps(30);
-            session.setDeliveryMode(defaultDeliveryMode());
+            session.setDeliveryMode(resolveStreamDeliveryMode(id));
             return session;
         });
     }
@@ -185,17 +186,19 @@ public class StreamQoSService {
             double packetLossPct,
             long rttMs,
             double jitterMs,
-            long downloadKbps) {
+            long downloadKbps,
+            long avgDelayMs) {
         StreamQoSSession s = sessions.get(streamId);
         if (s != null) {
-            s.recordWebRtcStats(presenceId, qualityLabel, packetLossPct, rttMs, jitterMs, downloadKbps);
+            s.recordWebRtcStats(
+                    presenceId, qualityLabel, packetLossPct, rttMs, jitterMs, downloadKbps, avgDelayMs);
         }
     }
 
     public StreamQoSResponse snapshot(long streamId) {
         StreamQoSSession s = sessions.get(streamId);
         if (s == null) {
-            return StreamQoSResponse.empty(streamId);
+            return StreamQoSResponse.empty(streamId, resolveStreamDeliveryMode(streamId));
         }
         return buildResponse(s, minIngestKbps(), false);
     }
@@ -227,9 +230,11 @@ public class StreamQoSService {
     }
 
     public OpsQoSDto globalOps() {
-        int activeSessions = sessions.size();
+        List<Long> activeStreamIds = liveStreamDAO.findBroadcasting().stream()
+                .map(LiveStream::getId)
+                .toList();
         int viewers = liveRoomHub.totalViewers();
-        return new OpsQoSDto(activeSessions, viewers, sessions.keySet().stream().toList());
+        return new OpsQoSDto(activeStreamIds.size(), viewers, activeStreamIds);
     }
 
     private StreamQoSResponse buildResponse(StreamQoSSession s, long minKbps, boolean includeAllEvents) {
@@ -266,6 +271,7 @@ public class StreamQoSService {
                 s.avgRttMs(),
                 s.avgJitterMs());
         delivery.setDeliveryHealthScore(s.deliveryHealthScore());
+        delivery.setAvgDelayMs(s.avgDelayMs());
 
         int joins = s.viewerJoinOk() + s.viewerJoinFail();
         double joinSuccess = joins == 0 ? 100.0 : (100.0 * s.viewerJoinOk() / joins);
@@ -330,6 +336,20 @@ public class StreamQoSService {
     }
 
     private String defaultDeliveryMode() {
-        return configuration.isMediamtxDelivery() ? "webrtc" : "hls";
+        return configuration.isRtmpWebRtcDelivery() ? "webrtc" : "hls";
+    }
+
+    private String resolveStreamDeliveryMode(long streamId) {
+        return liveStreamDAO.findById(streamId)
+                .map(this::resolveDeliveryForStream)
+                .orElseGet(this::defaultDeliveryMode);
+    }
+
+    private String resolveDeliveryForStream(LiveStream stream) {
+        String stored = stream.getDelivery();
+        if (stored == null || stored.isBlank() || "auto".equalsIgnoreCase(stored)) {
+            return defaultDeliveryMode();
+        }
+        return stored.trim().toLowerCase(Locale.ROOT);
     }
 }

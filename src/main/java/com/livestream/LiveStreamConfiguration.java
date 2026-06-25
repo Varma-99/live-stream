@@ -1,11 +1,16 @@
 package com.livestream;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.livestream.config.PeerInstance;
+import com.livestream.config.RedisSettings;
 import io.dropwizard.core.Configuration;
 import io.dropwizard.db.DataSourceFactory;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 /**
  * Maps fields from {@code config/config.yml}.
@@ -60,7 +65,13 @@ public class LiveStreamConfiguration extends Configuration {
     private boolean abrEnabled = true;
 
     /**
-     * LAN base URL for phones on Wi-Fi, e.g. {@code http://10.255.51.126:8080}.
+     * SRS topology: {@code single} = one container (default); {@code edge} = origin ingest + edge WHEP cluster.
+     * In edge mode, {@link #srsWhepBase} points at the load balancer; {@link #srsApiBase} at origin.
+     */
+    private String clusterMode = "single";
+
+    /**
+     * LAN base URL for phones on Wi-Fi, e.g. {@code http://10.255.61.28:8080}.
      * WHEP URLs use {@link #mediamtxWebrtcBase}; FFmpeg RTMP ingest stays on localhost.
      */
     private String publicWebBase = "http://127.0.0.1:8080";
@@ -73,6 +84,21 @@ public class LiveStreamConfiguration extends Configuration {
 
     /** When true, {@code GET /streams} hides WebRTC streams with no active SRS/MediaMTX publish. */
     private boolean ingestLivenessFilter = true;
+
+    /** Unique id for this JVM in a multi-instance deployment. */
+    private String instanceId = "app-1";
+
+    /** When false, RedisService is a no-op (default — single-instance dev). */
+    private boolean redisEnabled = false;
+
+    @Valid
+    @NotNull
+    private RedisSettings redis = new RedisSettings();
+
+    private List<PeerInstance> peerInstances = new ArrayList<>();
+
+    /** Shared secret for instance-to-instance APIs (Phase 7+). Blank = disabled in single-instance dev. */
+    private String internalApiToken = "";
 
     @JsonProperty("database")
     public DataSourceFactory getDataSourceFactory() {
@@ -303,5 +329,73 @@ public class LiveStreamConfiguration extends Configuration {
     @JsonProperty
     public void setIngestLivenessFilter(boolean ingestLivenessFilter) {
         this.ingestLivenessFilter = ingestLivenessFilter;
+    }
+
+    @JsonProperty
+    public String getClusterMode() {
+        return clusterMode;
+    }
+
+    @JsonProperty
+    public void setClusterMode(String clusterMode) {
+        this.clusterMode = clusterMode;
+    }
+
+    public boolean isEdgeClusterMode() {
+        return clusterMode != null && "edge".equalsIgnoreCase(clusterMode.trim());
+    }
+
+    @JsonProperty
+    public String getInstanceId() {
+        return instanceId;
+    }
+
+    @JsonProperty
+    public void setInstanceId(String instanceId) {
+        this.instanceId = instanceId;
+    }
+
+    @JsonProperty
+    public boolean isRedisEnabled() {
+        return redisEnabled;
+    }
+
+    @JsonProperty
+    public void setRedisEnabled(boolean redisEnabled) {
+        this.redisEnabled = redisEnabled;
+    }
+
+    @JsonProperty
+    public RedisSettings getRedis() {
+        return redis;
+    }
+
+    @JsonProperty
+    public void setRedis(RedisSettings redis) {
+        this.redis = redis != null ? redis : new RedisSettings();
+    }
+
+    @JsonProperty
+    public List<PeerInstance> getPeerInstances() {
+        return peerInstances == null ? Collections.emptyList() : peerInstances;
+    }
+
+    @JsonProperty
+    public void setPeerInstances(List<PeerInstance> peerInstances) {
+        this.peerInstances = peerInstances != null ? peerInstances : new ArrayList<>();
+    }
+
+    @JsonProperty
+    public String getInternalApiToken() {
+        return internalApiToken;
+    }
+
+    @JsonProperty
+    public void setInternalApiToken(String internalApiToken) {
+        this.internalApiToken = internalApiToken != null ? internalApiToken : "";
+    }
+
+    public boolean isInternalApiEnabled() {
+        return internalApiToken != null && !internalApiToken.isBlank();
     }
 }

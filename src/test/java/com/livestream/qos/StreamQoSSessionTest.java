@@ -42,8 +42,8 @@ class StreamQoSSessionTest {
     @Test
     void webRtcStatsAggregate() {
         StreamQoSSession session = new StreamQoSSession(4L);
-        session.recordWebRtcStats("p1", "720p", 2.5, 80, 12.0, 3000);
-        session.recordWebRtcStats("p1", "720p", 1.0, 60, 8.0, 4000);
+        session.recordWebRtcStats("p1", "720p", 2.5, 80, 12.0, 3000, 450);
+        session.recordWebRtcStats("p1", "720p", 1.0, 60, 8.0, 4000, 520);
         assertTrue(session.avgPacketLossPct() > 0);
         assertTrue(session.avgRttMs() > 0);
     }
@@ -62,7 +62,7 @@ class StreamQoSSessionTest {
             if (i % 10 == 0) {
                 session.recordViewerEvent(pid, QoSEventType.DELIVERY_ABR_STEP_DOWN, "abr", "480p");
             }
-            session.recordWebRtcStats(pid, "720p", 1.2, 90, 10.0, 2500);
+            session.recordWebRtcStats(pid, "720p", 1.2, 90, 10.0, 2500, 600);
         }
         assertTrue(session.viewerHealthScore() >= 55);
     }
@@ -91,6 +91,15 @@ class StreamQoSSessionTest {
         }
         assertEquals(deliveryBefore, session.deliveryHealthScore());
         assertTrue(session.viewerHealthScore() < viewerBefore);
+    }
+
+    @Test
+    void webRtcStatsStoresAvgDelayPerViewer() {
+        StreamQoSSession session = new StreamQoSSession(10L);
+        session.recordViewerEvent("p1", QoSEventType.VIEWER_JOIN_OK, "join", null);
+        session.recordWebRtcStats("p1", "720p", 0, 100, 0, 2000, 850);
+        var row = session.viewerSessionDtos().get(0);
+        assertEquals(850, row.getAvgDelayMs());
     }
 
     @Test

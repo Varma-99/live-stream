@@ -6,9 +6,11 @@ import com.livestream.mediamtx.IngestHealthService;
 import com.livestream.model.LiveStream;
 import com.livestream.qos.StreamQoSService;
 import com.livestream.model.StreamStatus;
+import com.livestream.redis.RedisService;
 import com.livestream.service.VideoService;
 import io.dropwizard.lifecycle.Managed;
 import java.time.Instant;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -21,6 +23,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Tracks streamer control-panel heartbeats. Stops FFmpeg if the broadcaster tab disappears.
+ * With Redis: heartbeat is shared; zombie check runs only on the instance that owns FFmpeg.
  */
 @Singleton
 public class BroadcasterControlService implements Managed {
@@ -28,13 +31,18 @@ public class BroadcasterControlService implements Managed {
     private static final Logger LOGGER = LoggerFactory.getLogger(BroadcasterControlService.class);
     static final long HEARTBEAT_TIMEOUT_MS = 15_000;
     private static final long CHECK_INTERVAL_SECONDS = 5;
+    private static final long OWNER_REFRESH_INTERVAL_SECONDS = 10;
 
     private final SessionFactory sessionFactory;
     private final VideoService videoService;
     private final LiveRoomHub liveRoomHub;
     private final IngestHealthService ingestHealthService;
     private final StreamQoSService streamQoSService;
+    private final RedisService redisService;
 
+    /** Local FFmpeg ownership — streams started on this JVM. */
+    private final Set<Long> locallyOwnedStreams = ConcurrentHashMap.newKeySet();
+    /** In-memory heartbeats when Redis is disabled. */
     private final ConcurrentHashMap<Long, Long> lastHeartbeatMs = new ConcurrentHashMap<>();
     private ScheduledExecutorService scheduler;
 
@@ -44,12 +52,14 @@ public class BroadcasterControlService implements Managed {
             VideoService videoService,
             LiveRoomHub liveRoomHub,
             IngestHealthService ingestHealthService,
-            StreamQoSService streamQoSService) {
+            StreamQoSService streamQoSService,
+            RedisService redisService) {
         this.sessionFactory = sessionFactory;
         this.videoService = videoService;
         this.liveRoomHub = liveRoomHub;
         this.ingestHealthService = ingestHealthService;
         this.streamQoSService = streamQoSService;
+        this.redisService = redisService;
     }
 
     public void onStreamStarted(long streamId) {
@@ -61,15 +71,33 @@ public class BroadcasterControlService implements Managed {
         if (dummy) {
             return;
         }
-        lastHeartbeatMs.put(streamId, System.currentTimeMillis());
+        locallyOwnedStreams.add(streamId);
+        if (redisService.isEnabled()) {
+            redisService.broadcasterHeartbeatTouch(streamId);
+        } else {
+            lastHeartbeatMs.put(streamId, System.currentTimeMillis());
+        }
     }
 
     public void touch(long streamId) {
-        lastHeartbeatMs.put(streamId, System.currentTimeMillis());
+        if (redisService.isEnabled()) {
+            redisService.broadcasterHeartbeatTouch(streamId);
+        } else {
+            lastHeartbeatMs.put(streamId, System.currentTimeMillis());
+        }
     }
 
     public void onStreamStopped(long streamId) {
+        locallyOwnedStreams.remove(streamId);
         lastHeartbeatMs.remove(streamId);
+        if (redisService.isEnabled()) {
+            redisService.broadcasterHeartbeatDelete(streamId);
+            redisService.deleteStreamOwner(streamId);
+        }
+    }
+
+    public boolean isLocallyOwned(long streamId) {
+        return locallyOwnedStreams.contains(streamId);
     }
 
     @Override
@@ -80,6 +108,13 @@ public class BroadcasterControlService implements Managed {
             return t;
         });
         scheduler.scheduleAtFixedRate(this::checkTimeouts, CHECK_INTERVAL_SECONDS, CHECK_INTERVAL_SECONDS, TimeUnit.SECONDS);
+        if (redisService.isEnabled()) {
+            scheduler.scheduleAtFixedRate(
+                    this::refreshOwnedStreams,
+                    OWNER_REFRESH_INTERVAL_SECONDS,
+                    OWNER_REFRESH_INTERVAL_SECONDS,
+                    TimeUnit.SECONDS);
+        }
         LOGGER.info("Broadcaster control: auto-stop if heartbeat missing for {}s", HEARTBEAT_TIMEOUT_MS / 1000);
     }
 
@@ -90,7 +125,25 @@ public class BroadcasterControlService implements Managed {
         }
     }
 
+    private void refreshOwnedStreams() {
+        String self = redisService.getInstanceId();
+        for (long streamId : locallyOwnedStreams) {
+            redisService.setStreamOwner(streamId, self);
+        }
+    }
+
     private void checkTimeouts() {
+        if (redisService.isEnabled()) {
+            if (redisService.isZombieCheckGracePeriod()) {
+                return;
+            }
+            for (long streamId : locallyOwnedStreams) {
+                if (!redisService.broadcasterHeartbeatAlive(streamId)) {
+                    zombieStop(streamId, "broadcaster control heartbeat timeout (redis)");
+                }
+            }
+            return;
+        }
         long now = System.currentTimeMillis();
         for (var entry : lastHeartbeatMs.entrySet()) {
             long streamId = entry.getKey();
@@ -101,9 +154,14 @@ public class BroadcasterControlService implements Managed {
     }
 
     private void zombieStop(long streamId, String reason) {
-        if (!lastHeartbeatMs.containsKey(streamId)) {
+        if (redisService.isEnabled()) {
+            if (!locallyOwnedStreams.contains(streamId)) {
+                return;
+            }
+        } else if (!lastHeartbeatMs.containsKey(streamId)) {
             return;
         }
+        locallyOwnedStreams.remove(streamId);
         lastHeartbeatMs.remove(streamId);
 
         try (Session session = sessionFactory.openSession()) {
@@ -128,6 +186,9 @@ public class BroadcasterControlService implements Managed {
                 stream.setEndedAt(Instant.now());
 
                 tx.commit();
+                redisService.setStreamStatus(streamId, StreamStatus.ENDED);
+                redisService.broadcasterHeartbeatDelete(streamId);
+                redisService.deleteStreamOwner(streamId);
                 LOGGER.warn("Zombie stop stream {} ({})", streamId, reason);
             } catch (RuntimeException e) {
                 if (tx.isActive()) {

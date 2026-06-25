@@ -1,0 +1,5 @@
+{
+  "status": "PASS",
+  "message": "no false zombie stop during Redis restart grace",
+  "finished_at": "2026-06-23T10:34:34.349591+00:00"
+}

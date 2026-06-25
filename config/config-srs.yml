@@ -41,7 +41,7 @@ cameraDevice: "0:0"
 useTestVideo: false
 rtmpPort: 1935
 
-publicWebBase: http://10.255.51.126:8080
+publicWebBase: http://10.255.61.28:8080
 
 # SRS mode (stop MediaMTX first — both use RTMP :1935)
 streamDelivery: srs

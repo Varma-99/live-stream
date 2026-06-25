@@ -47,4 +47,31 @@ class FfmpegCommandBuilderTest {
         String filter = cmd.get(cmd.indexOf("-filter_complex") + 1);
         assertTrue(filter.contains("fps=5"));
     }
+
+    @Test
+    void avfoundationMediamtxAbrUsesCfrSyncAndOneSecondGop() {
+        List<String> cmd = FfmpegCommandBuilder.avfoundationCameraToMediamtxAbr(
+                "/usr/bin/ffmpeg",
+                "0:0",
+                "rtmp://127.0.0.1/live/key_high",
+                "rtmp://127.0.0.1/live/key_mid",
+                "rtmp://127.0.0.1/live/key_low",
+                false);
+        assertTrue(cmd.contains("-vsync"));
+        assertTrue(cmd.contains("cfr"));
+        assertTrue(cmd.contains("-async"));
+        assertTrue(cmd.contains("1"));
+        assertTrue(cmd.contains("-g"));
+        assertTrue(cmd.contains("30"));
+    }
+
+    @Test
+    void avfoundationMediamtxSinglePathUsesCfrSync() {
+        List<String> cmd = FfmpegCommandBuilder.avfoundationCameraToMediamtx(
+                "/usr/bin/ffmpeg", "0:0", "rtmp://127.0.0.1/live/key");
+        int deviceIdx = cmd.indexOf("0:0");
+        assertTrue(deviceIdx >= 0);
+        assertTrue(cmd.subList(deviceIdx, cmd.size()).contains("-vsync"));
+        assertTrue(cmd.subList(deviceIdx, cmd.size()).contains("cfr"));
+    }
 }

@@ -416,6 +416,7 @@
           videoFlowing = true;
           lastVideoBytesGrowthAt = Date.now();
           playStatus.textContent = 'Playing';
+          beaconWebrtcTtff();
         }
       };
 
@@ -464,12 +465,18 @@
       let packetsReceived = 0;
       let jitterMs = 0;
       let rttMs = 0;
+      let jitterBufferDelay = 0;
+      let jitterBufferEmittedCount = 0;
       reports.forEach((r) => {
         if (r.type === 'inbound-rtp' && r.kind === 'video') {
           bytes += r.bytesReceived || 0;
           packetsLost += r.packetsLost || 0;
           packetsReceived += r.packetsReceived || 0;
           if (r.jitter != null) jitterMs = Math.max(jitterMs, r.jitter * 1000);
+          if (r.jitterBufferDelay != null) jitterBufferDelay = Math.max(jitterBufferDelay, r.jitterBufferDelay);
+          if (r.jitterBufferEmittedCount != null) {
+            jitterBufferEmittedCount = Math.max(jitterBufferEmittedCount, r.jitterBufferEmittedCount);
+          }
         }
         if (r.type === 'remote-inbound-rtp' && r.kind === 'video' && r.roundTripTime != null) {
           rttMs = Math.round(r.roundTripTime * 1000);
@@ -490,7 +497,13 @@
       }
       const totalPkts = packetsLost + packetsReceived;
       const lossPct = totalPkts > 0 ? (packetsLost / totalPkts) * 100 : 0;
-      return { bytes, kbps, lossPct, rttMs, jitterMs };
+      let avgDelayMs = 0;
+      if (jitterBufferEmittedCount > 0 && jitterBufferDelay > 0) {
+        avgDelayMs = Math.round((jitterBufferDelay / jitterBufferEmittedCount) * 1000 + rttMs / 2);
+      } else if (rttMs > 0) {
+        avgDelayMs = Math.round(rttMs / 2);
+      }
+      return { bytes, kbps, lossPct, rttMs, jitterMs, avgDelayMs };
     }
 
     function beaconWebrtcTtff() {
@@ -503,12 +516,12 @@
       if (!whepPc || reconnecting || isPlaybackPaused()) return;
       if (Date.now() - whepSessionStart < 15000) return;
 
-      const { bytes, kbps, lossPct, rttMs, jitterMs } = await readWebRtcQos(whepPc);
+      const { bytes, kbps, lossPct, rttMs, jitterMs, avgDelayMs } = await readWebRtcQos(whepPc);
       const current = qualities[qualityIndex];
       if (!current) return;
 
       updateQualityBadge(current.label, kbps);
-      postViewerStats(current.label, kbps, lossPct, rttMs, jitterMs);
+      postViewerStats(current.label, kbps, lossPct, rttMs, jitterMs, avgDelayMs);
 
       if (bytes > lastVideoBytes) {
         lastVideoBytes = bytes;
@@ -605,20 +618,24 @@
       }
     }
 
-    async function postViewerStats(qualityLabel, downloadKbps, packetLossPct, rttMs, jitterMs) {
+    async function postViewerStats(qualityLabel, downloadKbps, packetLossPct, rttMs, jitterMs, avgDelayMs) {
       if (!activeStreamId || !presenceId) return;
       try {
+        const body = {
+          presenceId,
+          qualityLabel: qualityLabel || '720p',
+          packetLossPct: packetLossPct != null ? packetLossPct : 0,
+          rttMs: rttMs != null ? rttMs : 0,
+          jitterMs: jitterMs != null ? jitterMs : 0,
+          downloadKbps: downloadKbps || 0,
+        };
+        if (avgDelayMs != null && avgDelayMs > 0) {
+          body.avgDelayMs = avgDelayMs;
+        }
         await fetch('/streams/' + activeStreamId + '/qos/viewer-stats', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            presenceId,
-            qualityLabel: qualityLabel || '720p',
-            packetLossPct: packetLossPct != null ? packetLossPct : 0,
-            rttMs: rttMs != null ? rttMs : 0,
-            jitterMs: jitterMs != null ? jitterMs : 0,
-            downloadKbps: downloadKbps || 0,
-          }),
+          body: JSON.stringify(body),
         });
       } catch (e) {
         console.warn('viewer-stats', e);

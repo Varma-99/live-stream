@@ -60,7 +60,7 @@ k6 run --summary-export=load-test/results/k6-summary.json load-test/k6-viewer-qo
 # auto-picks live stream id; or: --env STREAM_ID=2 after ./load-test/active-stream.sh
 ```
 
-LAN IP (phones / other machines): use `BASE_URL=http://10.255.51.126:8080`.
+LAN IP (phones / other machines): use `BASE_URL=http://10.255.61.28:8080`.
 
 ## While k6 runs
 

@@ -38,6 +38,9 @@ public class ViewerSessionQoSDto {
     @JsonProperty
     private long downloadKbps;
 
+    @JsonProperty
+    private long avgDelayMs;
+
     public ViewerSessionQoSDto() {}
 
     public ViewerSessionQoSDto(
@@ -51,7 +54,8 @@ public class ViewerSessionQoSDto {
             double packetLossPct,
             long rttMs,
             double jitterMs,
-            long downloadKbps) {
+            long downloadKbps,
+            long avgDelayMs) {
         this.presenceId = presenceId;
         this.qualityLabel = qualityLabel;
         this.watchMs = watchMs;
@@ -63,6 +67,7 @@ public class ViewerSessionQoSDto {
         this.rttMs = rttMs;
         this.jitterMs = jitterMs;
         this.downloadKbps = downloadKbps;
+        this.avgDelayMs = avgDelayMs;
     }
 
     public String getPresenceId() {
@@ -103,5 +108,9 @@ public class ViewerSessionQoSDto {
 
     public long getDownloadKbps() {
         return downloadKbps;
+    }
+
+    public long getAvgDelayMs() {
+        return avgDelayMs;
     }
 }

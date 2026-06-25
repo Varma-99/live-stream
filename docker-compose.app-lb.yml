@@ -1,0 +1,20 @@
+# App-tier load balancer (Phase 8) — round-robin to two JVM instances on the host.
+# Usage:
+#   1) docker-compose -f docker-compose.dev-infra.yml up -d
+#   2) Start app-1 + app-2 (config/config-dev-pg-app1.yml / app2.yml)
+#   3) ./scripts/start-app-lb.sh
+#   4) ./scripts/test-phase8-lb.sh
+#   Public UI: http://127.0.0.1:8080/ui/  (LAN: publicWebBase in config)
+
+services:
+  app-lb:
+    image: haproxy:3.0-alpine
+    container_name: livestream-app-lb
+    ports:
+      - "8080:8080"
+      - "8404:8404"
+    volumes:
+      - ./haproxy-app.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped

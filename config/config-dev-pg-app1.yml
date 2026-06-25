@@ -1,0 +1,86 @@
+# App instance 1 — multi-instance cluster (Phase 7–8).
+# 1) docker-compose -f docker-compose.dev-infra.yml up -d
+# 2) SRS_STACK=2tier ./scripts/start-srs.sh
+# 3) Terminal 1: ./mvnw -Dexec.args="server config/config-dev-pg-app1.yml" compile exec:java
+# 4) Terminal 2: ./mvnw -Dexec.args="server config/config-dev-pg-app2.yml" compile exec:java
+# 5) ./scripts/start-app-lb.sh
+# 6) ./scripts/test-phase8-lb.sh
+# UI (via LB): http://127.0.0.1:8080/ui/
+
+server:
+  maxThreads: 256
+  minThreads: 32
+  applicationConnectors:
+    - type: http
+      port: 8090
+      bindHost: 0.0.0.0
+  adminConnectors:
+    - type: http
+      port: 8091
+      bindHost: 0.0.0.0
+
+logging:
+  level: INFO
+  loggers:
+    com.livestream: DEBUG
+    org.hibernate.engine.internal.StatisticalLoggingSessionEventListener: WARN
+
+devMode: true
+
+database:
+  driverClass: org.postgresql.Driver
+  url: jdbc:postgresql://127.0.0.1:5432/livestream
+  user: livestream
+  password: change-me
+  properties:
+    charSet: UTF-8
+    hibernate.dialect: org.hibernate.dialect.PostgreSQLDialect
+    hibernate.hbm2ddl.auto: update
+    hibernate.show_sql: false
+  maxWaitForConnection: 1s
+  validationQuery: "SELECT 1"
+  initialSize: 16
+  minSize: 16
+  maxSize: 128
+
+ffmpegPath: /opt/homebrew/bin/ffmpeg
+hlsOutputDir: ./data/hls
+# laptop camera (macOS). Only one LIVE stream cluster-wide while using camera.
+videoInput: camera
+cameraDevice: "0:0"
+useTestVideo: false
+rtmpPort: 1935
+
+publicWebBase: http://10.255.61.28:8080
+
+streamDelivery: srs
+srsRtmpPublishBase: rtmp://127.0.0.1:1935
+srsWhepBase: http://127.0.0.1:1985
+srsApiBase: http://127.0.0.1:1985
+srsApiEnabled: true
+abrEnabled: true
+
+encoderMode: local
+ingestLivenessFilter: true
+clusterMode: single
+
+instanceId: app-1
+redisEnabled: true
+redis:
+  host: 127.0.0.1
+  port: 6379
+  password: ""
+  timeoutMs: 2000
+  poolMaxTotal: 128
+  poolMaxIdle: 64
+  poolMinIdle: 16
+
+internalApiToken: dev-internal-token
+peerInstances:
+  - id: app-2
+    host: http://127.0.0.1:8092
+
+mediamtxRtmpPublishBase: rtmp://127.0.0.1:1935
+mediamtxWebrtcBase: http://127.0.0.1:8889
+mediamtxApiBase: http://127.0.0.1:9997
+mediamtxApiEnabled: false

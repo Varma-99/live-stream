@@ -2,6 +2,8 @@
 #   source "${ROOT}/load-test/lib/common.sh"
 #   source "${ROOT}/load-test/lib/srs.sh"
 
+# SRS helpers — defaults match single-node stack.
+# Edge cluster: export SRS_API_BASE=http://127.0.0.1:1995 SRS_WHEP_BASE=http://127.0.0.1:1985
 SRS_API_BASE="${SRS_API_BASE:-http://127.0.0.1:1985}"
 SRS_WHEP_BASE="${SRS_WHEP_BASE:-http://127.0.0.1:1985}"
 SRS_FLV_BASE="${SRS_FLV_BASE:-http://127.0.0.1:8088}"

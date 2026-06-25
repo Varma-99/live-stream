@@ -1,0 +1,84 @@
+# Local development — PostgreSQL + SRS WebRTC (shared DB for multi-instance work).
+# 1) docker-compose -f docker-compose.dev-infra.yml up -d
+# 2) ./scripts/start-srs.sh
+# 3) ./mvnw -Dexec.args="server config/config-dev-pg.yml" compile exec:java
+
+server:
+  applicationConnectors:
+    - type: http
+      port: 8080
+      bindHost: 0.0.0.0
+  adminConnectors:
+    - type: http
+      port: 8081
+      bindHost: 0.0.0.0
+
+logging:
+  level: INFO
+  loggers:
+    com.livestream: DEBUG
+    org.hibernate.engine.internal.StatisticalLoggingSessionEventListener: WARN
+
+devMode: true
+
+database:
+  driverClass: org.postgresql.Driver
+  url: jdbc:postgresql://127.0.0.1:5432/livestream
+  user: livestream
+  password: change-me
+  properties:
+    charSet: UTF-8
+    hibernate.dialect: org.hibernate.dialect.PostgreSQLDialect
+    hibernate.hbm2ddl.auto: update
+    hibernate.show_sql: false
+  maxWaitForConnection: 1s
+  validationQuery: "SELECT 1"
+  initialSize: 1
+  minSize: 1
+  maxSize: 128
+
+ffmpegPath: /opt/homebrew/bin/ffmpeg
+hlsOutputDir: ./data/hls
+# laptop camera (macOS). Use "test" for color bars, "rtmp" for external FFmpeg ingest later
+videoInput: camera
+cameraDevice: "0:0"
+useTestVideo: false
+rtmpPort: 1935
+
+# LAN viewer links — keep in sync with SRS CANDIDATE (ipconfig getifaddr en0)
+publicWebBase: http://10.255.61.28:8080
+
+# SRS mode (stop MediaMTX first — both use RTMP :1935)
+streamDelivery: srs
+srsRtmpPublishBase: rtmp://127.0.0.1:1935
+srsWhepBase: http://127.0.0.1:1985
+srsApiBase: http://127.0.0.1:1985
+srsApiEnabled: true
+abrEnabled: true
+
+# Planes: control (this app) + media (SRS) + encode (FFmpeg)
+# local = app spawns FFmpeg (camera). external = you run FFmpeg to srsRtmpPublishBase.
+encoderMode: local
+ingestLivenessFilter: true
+
+# SRS topology: single (default) | edge (origin + edges — use config-dev-cluster.yml)
+clusterMode: single
+
+# Phase 3+ — shared Redis for multi-instance (requires docker-compose.dev-infra.yml)
+instanceId: app-1
+redisEnabled: true
+redis:
+  host: 127.0.0.1
+  port: 6379
+  password: ""
+  timeoutMs: 2000
+
+# Phase 7 — leave peerInstances empty for single-instance; set token when using app1/app2 configs
+internalApiToken: ""
+peerInstances: []
+
+# Legacy MediaMTX (streamDelivery: mediamtx) — not used in SRS mode
+mediamtxRtmpPublishBase: rtmp://127.0.0.1:1935
+mediamtxWebrtcBase: http://127.0.0.1:8889
+mediamtxApiBase: http://127.0.0.1:9997
+mediamtxApiEnabled: false

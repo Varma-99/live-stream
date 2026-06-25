@@ -15,8 +15,11 @@ import com.livestream.api.dto.RoomSnapshot;
 import com.livestream.mediamtx.IngestHealthService;
 import com.livestream.qos.QoSEventType;
 import com.livestream.qos.StreamQoSService;
+import com.livestream.cluster.StreamControlService;
+import com.livestream.cluster.ViewerQoSRouter;
 import com.livestream.realtime.BroadcasterControlService;
 import com.livestream.realtime.LiveRoomHub;
+import com.livestream.redis.RedisService;
 import java.io.IOException;
 import java.security.SecureRandom;
 import java.time.Instant;
@@ -36,6 +39,9 @@ public class StreamService {
     private final IngestHealthService ingestHealthService;
     private final BroadcasterControlService broadcasterControlService;
     private final StreamQoSService streamQoSService;
+    private final RedisService redisService;
+    private final StreamControlService streamControlService;
+    private final ViewerQoSRouter viewerQoSRouter;
 
     @Inject
     public StreamService(
@@ -46,7 +52,10 @@ public class StreamService {
             LiveRoomHub liveRoomHub,
             IngestHealthService ingestHealthService,
             BroadcasterControlService broadcasterControlService,
-            StreamQoSService streamQoSService) {
+            StreamQoSService streamQoSService,
+            RedisService redisService,
+            StreamControlService streamControlService,
+            ViewerQoSRouter viewerQoSRouter) {
         this.configuration = configuration;
         this.userDAO = userDAO;
         this.liveStreamDAO = liveStreamDAO;
@@ -55,6 +64,9 @@ public class StreamService {
         this.ingestHealthService = ingestHealthService;
         this.broadcasterControlService = broadcasterControlService;
         this.streamQoSService = streamQoSService;
+        this.redisService = redisService;
+        this.streamControlService = streamControlService;
+        this.viewerQoSRouter = viewerQoSRouter;
     }
 
     public List<StreamResponse> listLiveStreams() {
@@ -89,6 +101,17 @@ public class StreamService {
     }
 
     public StreamResponse startStream(Long broadcasterId, String title, String delivery) {
+        if (!redisService.tryAcquireBroadcasterStartLock(broadcasterId)) {
+            throw new IllegalStateException("Stream start already in progress for this broadcaster");
+        }
+        try {
+            return startStreamUnlocked(broadcasterId, title, delivery);
+        } finally {
+            redisService.releaseBroadcasterStartLock(broadcasterId);
+        }
+    }
+
+    private StreamResponse startStreamUnlocked(Long broadcasterId, String title, String delivery) {
         User broadcaster = userDAO.findById(broadcasterId)
                 .orElseThrow(() -> new IllegalArgumentException("Broadcaster not found: " + broadcasterId));
 
@@ -132,8 +155,10 @@ public class StreamService {
         }
         if (!externalEncoder) {
             broadcasterControlService.onStreamStarted(saved.getId());
+            syncStreamOwner(saved.getId());
         }
         streamQoSService.beginSession(saved.getId(), videoService.resolveDelivery(saved));
+        syncStreamStatus(saved.getId(), saved.getStatus());
         return toStreamResponse(saved);
     }
 
@@ -159,6 +184,7 @@ public class StreamService {
             throw new IllegalStateException("Failed to start dummy encoder: " + e.getMessage(), e);
         }
         streamQoSService.beginSession(saved.getId(), videoService.resolveDelivery(saved));
+        syncStreamStatus(saved.getId(), saved.getStatus());
         return toStreamResponse(saved);
     }
 
@@ -169,6 +195,7 @@ public class StreamService {
             throw new IllegalStateException("Stream is not live (cannot pause): " + streamId);
         }
         stream.setStatus(StreamStatus.PAUSED);
+        syncStreamStatus(streamId, StreamStatus.PAUSED);
         return toStreamResponse(stream);
     }
 
@@ -179,10 +206,16 @@ public class StreamService {
             throw new IllegalStateException("Stream is not paused: " + streamId);
         }
         stream.setStatus(StreamStatus.LIVE);
+        syncStreamStatus(streamId, StreamStatus.LIVE);
         return toStreamResponse(stream);
     }
 
     public StreamResponse stopStream(Long streamId) {
+        return streamControlService.stopStream(streamId);
+    }
+
+    /** Stops FFmpeg and ends the stream on this JVM only (owner or internal API). */
+    public StreamResponse executeLocalStop(long streamId) {
         LiveStream stream = liveStreamDAO.findById(streamId)
                 .orElseThrow(() -> new IllegalArgumentException("Stream not found: " + streamId));
         if (stream.getStatus() != StreamStatus.LIVE && stream.getStatus() != StreamStatus.PAUSED) {
@@ -190,6 +223,12 @@ public class StreamService {
         }
         endActiveStream(streamId, stream);
         return StreamResponse.from(stream);
+    }
+
+    public StreamResponse loadStreamResponse(long streamId) {
+        LiveStream stream = liveStreamDAO.findById(streamId)
+                .orElseThrow(() -> new IllegalArgumentException("Stream not found: " + streamId));
+        return toStreamResponse(stream);
     }
 
     public void broadcasterHeartbeat(long streamId) {
@@ -273,6 +312,15 @@ public class StreamService {
         liveRoomHub.closeRoom(streamId);
         stream.setStatus(StreamStatus.ENDED);
         stream.setEndedAt(Instant.now());
+        syncStreamStatus(streamId, StreamStatus.ENDED);
+    }
+
+    private void syncStreamStatus(long streamId, StreamStatus status) {
+        redisService.setStreamStatus(streamId, status);
+    }
+
+    private void syncStreamOwner(long streamId) {
+        redisService.setStreamOwner(streamId, configuration.getInstanceId());
     }
 
     public void dropCoupon(Long streamId, String code, int percentOff, int durationSec) {
@@ -285,7 +333,8 @@ public class StreamService {
         liveStreamDAO.findById(streamId)
                 .orElseThrow(() -> new IllegalArgumentException("Stream not found: " + streamId));
         String presenceId = liveRoomHub.join(streamId);
-        streamQoSService.recordViewerEvent(streamId, presenceId, QoSEventType.VIEWER_JOIN_OK, "Viewer joined", null);
+        viewerQoSRouter.recordViewerEvent(
+                streamId, presenceId, QoSEventType.VIEWER_JOIN_OK, "Viewer joined", null);
         return new JoinResponse(presenceId, enrichRoom(streamId, liveRoomHub.snapshot(streamId)));
     }
 

@@ -1,0 +1,79 @@
+# App instance 2 — multi-instance cluster (Phase 7–8). See config-dev-pg-app1.yml header.
+
+server:
+  maxThreads: 256
+  minThreads: 32
+  applicationConnectors:
+    - type: http
+      port: 8092
+      bindHost: 0.0.0.0
+  adminConnectors:
+    - type: http
+      port: 8093
+      bindHost: 0.0.0.0
+
+logging:
+  level: INFO
+  loggers:
+    com.livestream: DEBUG
+    org.hibernate.engine.internal.StatisticalLoggingSessionEventListener: WARN
+
+devMode: true
+
+database:
+  driverClass: org.postgresql.Driver
+  url: jdbc:postgresql://127.0.0.1:5432/livestream
+  user: livestream
+  password: change-me
+  properties:
+    charSet: UTF-8
+    hibernate.dialect: org.hibernate.dialect.PostgreSQLDialect
+    hibernate.hbm2ddl.auto: update
+    hibernate.show_sql: false
+  maxWaitForConnection: 1s
+  validationQuery: "SELECT 1"
+  initialSize: 16
+  minSize: 16
+  maxSize: 128
+
+ffmpegPath: /opt/homebrew/bin/ffmpeg
+hlsOutputDir: ./data/hls-app2
+# laptop camera — same as app-1; only the stream owner JVM opens the device.
+videoInput: camera
+cameraDevice: "0:0"
+useTestVideo: false
+rtmpPort: 1935
+
+publicWebBase: http://10.255.61.28:8080
+
+streamDelivery: srs
+srsRtmpPublishBase: rtmp://127.0.0.1:1935
+srsWhepBase: http://127.0.0.1:1985
+srsApiBase: http://127.0.0.1:1985
+srsApiEnabled: true
+abrEnabled: true
+
+encoderMode: local
+ingestLivenessFilter: true
+clusterMode: single
+
+instanceId: app-2
+redisEnabled: true
+redis:
+  host: 127.0.0.1
+  port: 6379
+  password: ""
+  timeoutMs: 2000
+  poolMaxTotal: 128
+  poolMaxIdle: 64
+  poolMinIdle: 16
+
+internalApiToken: dev-internal-token
+peerInstances:
+  - id: app-1
+    host: http://127.0.0.1:8090
+
+mediamtxRtmpPublishBase: rtmp://127.0.0.1:1935
+mediamtxWebrtcBase: http://127.0.0.1:8889
+mediamtxApiBase: http://127.0.0.1:9997
+mediamtxApiEnabled: false

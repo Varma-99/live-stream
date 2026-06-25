@@ -1,0 +1,5 @@
+{
+  "status": "PASS",
+  "message": "playback kill breaks forward (documented SPOF)",
+  "finished_at": "2026-06-23T10:14:07.155975+00:00"
+}

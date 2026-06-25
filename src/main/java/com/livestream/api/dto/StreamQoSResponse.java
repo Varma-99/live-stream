@@ -59,13 +59,22 @@ public class StreamQoSResponse {
         return overallHealthScore;
     }
 
+    public ViewerDeliveryQoSDto getDelivery() {
+        return delivery;
+    }
+
     public static StreamQoSResponse empty(long streamId) {
+        return empty(streamId, "unknown");
+    }
+
+    public static StreamQoSResponse empty(long streamId, String deliveryMode) {
+        String mode = deliveryMode != null && !deliveryMode.isBlank() ? deliveryMode : "unknown";
         return new StreamQoSResponse(
                 streamId,
                 0,
                 new IngestQoSDto(0, 0, 0, 0, 0, 0, 0, 0, false, 0),
                 new EncoderQoSDto(0, 30, 1.0, 0, 0, 0, 0, 100),
-                new ViewerDeliveryQoSDto(0, 0, 0, 0, 0, "unknown"),
+                new ViewerDeliveryQoSDto(0, 0, 0, 0, 0, mode),
                 new ViewerQoEAggregateDto(100, 0, 0, 0, 0, 0, 100),
                 new OpsQoSDto(0, 0, List.of()),
                 List.of(),

@@ -60,7 +60,7 @@ RTMP_PUBLISHER_COUNT=20
 RTMP_SUBSCRIBER_COUNT=100
 WHEP_SUBSCRIBERS=100
 DEGRADE_SUBS=15
-BASE_URL=http://10.255.51.126:8080
+BASE_URL=http://10.255.61.28:8080
 ```
 
 ## Reports per test
@@ -90,6 +90,37 @@ MEDIA_BACKEND=mediamtx ./scripts/start-mediamtx.sh
 ```
 
 For now this suite is **SRS-only**.
+
+## Edge cluster suite (origin + edges + HAProxy)
+
+```bash
+colima start --port-forwarder=grpc
+SRS_CLUSTER_MODE=edge ./scripts/start-srs.sh
+./mvnw server config/config-dev-cluster.yml
+chmod +x load-test/srs-suite/run-all-cluster.sh load-test/srs-suite/*-cluster.sh load-test/srs-suite/1*.sh
+./load-test/srs-suite/run-all-cluster.sh
+```
+
+| # | Script | What it validates |
+|---|--------|-------------------|
+| 00 | `00-preflight-cluster.sh` | origin :1995, LB :1985, containers, k6 |
+| 10 | `10-edge-failover.sh` | kill origin → WHEP down → restart → recovers (SRS 6: WHEP on origin only) |
+| 11 | `11-origin-edge-ttff.sh` | cold publish→WHEP latency, warm ABR joins |
+| 12 | `12-pull-efficiency.sh` | origin pulls flat as viewers scale (ABR ≈3) |
+
+Env (cluster):
+
+```bash
+BASE_URL=http://10.255.61.28:8080
+SRS_API_BASE=http://127.0.0.1:1995
+SRS_WHEP_BASE=http://127.0.0.1:1985
+FAILOVER_VUS_BEFORE=30
+PULL_TEST_VIEWER_STEPS="10 50 100"
+```
+
+Report: `load-test/reports/srs-cluster-run-<timestamp>/SRS-CLUSTER-REPORT.md`
+
+**SRS 6 note:** RTMP edge nodes disable WebRTC (`RtcDisabled`). WHEP terminates on **origin**; HAProxy `:1985` forwards to origin. Edge containers are kept for future SRS edge-WHEP support.
 
 ## Notes
 

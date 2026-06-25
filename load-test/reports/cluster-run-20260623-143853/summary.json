@@ -1,0 +1,67 @@
+{
+  "run_id": "20260623-143853",
+  "profile": "ci",
+  "generated_at": "2026-06-23T09:09:06.686474+00:00",
+  "tests": [
+    {
+      "id": "00-preflight-20260623-143633",
+      "status": "PASS",
+      "message": "all cluster components healthy",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-00-preflight-20260623-143633"
+    },
+    {
+      "id": "01-lb-lifecycle-20260623-143634",
+      "status": "UNKNOWN",
+      "message": "",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-01-lb-lifecycle-20260623-143634"
+    },
+    {
+      "id": "00-preflight-20260623-143853",
+      "status": "PASS",
+      "message": "all cluster components healthy",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-00-preflight-20260623-143853"
+    },
+    {
+      "id": "01-lb-lifecycle-20260623-143853",
+      "status": "UNKNOWN",
+      "message": "",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-01-lb-lifecycle-20260623-143853"
+    },
+    {
+      "id": "02-cross-instance-broadcaster-20260623-143855",
+      "status": "UNKNOWN",
+      "message": "",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-02-cross-instance-broadcaster-20260623-143855"
+    },
+    {
+      "id": "03-cross-instance-stop-20260623-143855",
+      "status": "UNKNOWN",
+      "message": "",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-03-cross-instance-stop-20260623-143855"
+    },
+    {
+      "id": "04-viewer-presence-20260623-143856",
+      "status": "UNKNOWN",
+      "message": "",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-04-viewer-presence-20260623-143856"
+    },
+    {
+      "id": "05-whep-2tier-20260623-143857",
+      "status": "PASS",
+      "message": "origin \u2192 playback forward \u2192 WHEP LB",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-05-whep-2tier-20260623-143857"
+    },
+    {
+      "id": "06-lb-round-robin-20260623-143903",
+      "status": "PASS",
+      "message": "LB routes to app-1 and app-2",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-06-lb-round-robin-20260623-143903"
+    },
+    {
+      "id": "07-redis-restart-grace-20260623-143906",
+      "status": "UNKNOWN",
+      "message": "",
+      "dir": "/Users/macharla.h/projects/live-stream-sandbox/load-test/reports/cluster-suite-07-redis-restart-grace-20260623-143906"
+    }
+  ]
+}

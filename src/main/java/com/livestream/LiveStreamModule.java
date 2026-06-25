@@ -5,12 +5,15 @@ import com.livestream.dao.LiveStreamDAO;
 import com.livestream.dao.QoSSessionDAO;
 import com.livestream.dao.UserDAO;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.livestream.cluster.PeerInstanceClient;
+import com.livestream.cluster.StreamControlService;
 import com.livestream.mediamtx.IngestHealthService;
 import com.livestream.mediamtx.MediamtxApiClient;
 import com.livestream.srs.SrsApiClient;
 import com.livestream.qos.StreamQoSService;
 import com.livestream.realtime.BroadcasterControlService;
 import com.livestream.realtime.LiveRoomHub;
+import com.livestream.redis.RedisService;
 import com.livestream.service.DevDataSeeder;
 import com.livestream.service.StreamService;
 import com.livestream.service.VideoService;
@@ -51,5 +54,8 @@ public class LiveStreamModule extends AbstractModule {
         bind(SrsApiClient.class);
         bind(IngestHealthService.class);
         bind(StreamQoSService.class);
+        bind(RedisService.class);
+        bind(PeerInstanceClient.class);
+        bind(StreamControlService.class);
     }
 }
