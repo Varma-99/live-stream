@@ -49,7 +49,7 @@ echo ""
 
 if [[ "${FAIL}" -eq 0 ]]; then
   echo "Cluster is healthy — run tests:"
-  echo "  export BASE_URL=http://10.255.61.28:8080"
+  echo "  export BASE_URL=http://10.255.45.175:8080"
   echo "  ./load-test/srs-suite/run-all-cluster.sh"
   exit 0
 fi

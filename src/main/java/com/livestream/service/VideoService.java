@@ -33,6 +33,7 @@ public class VideoService implements Managed {
     private final Map<Long, Process> processes = new ConcurrentHashMap<>();
     private final Map<Long, Process> dummyProcesses = new ConcurrentHashMap<>();
     private final Map<Long, Boolean> degradedStreams = new ConcurrentHashMap<>();
+    private volatile FfmpegCommandBuilder.EncoderType bestEncoder = FfmpegCommandBuilder.EncoderType.LIBX264;
 
     @Inject
     public VideoService(LiveStreamConfiguration configuration, StreamQoSService streamQoSService) {
@@ -251,7 +252,13 @@ public class VideoService implements Managed {
                                     "videoInput=camera requires macOS. Use videoInput: test");
                         }
                         yield FfmpegCommandBuilder.avfoundationCameraToMediamtxAbr(
-                                ffmpegPath, configuration.getCameraDevice(), high, mid, low, degraded);
+                                ffmpegPath,
+                                configuration.getCameraDevice(),
+                                high,
+                                mid,
+                                low,
+                                degraded,
+                                bestEncoder);
                     }
                     default -> FfmpegCommandBuilder.testPatternToMediamtxAbr(ffmpegPath, high, mid, low, degraded);
                 };
@@ -264,7 +271,7 @@ public class VideoService implements Managed {
                                 "videoInput=camera requires macOS. Use videoInput: test");
                     }
                     yield FfmpegCommandBuilder.avfoundationCameraToMediamtx(
-                            ffmpegPath, configuration.getCameraDevice(), rtmpUrl);
+                            ffmpegPath, configuration.getCameraDevice(), rtmpUrl, bestEncoder);
                 }
                 default -> FfmpegCommandBuilder.testPatternToMediamtx(ffmpegPath, rtmpUrl);
             };
@@ -406,7 +413,8 @@ public class VideoService implements Managed {
 
     @Override
     public void start() {
-        // no-op
+        this.bestEncoder = FfmpegCommandBuilder.probeBestEncoder(configuration.getFfmpegPath());
+        LOGGER.info("Detected video encoder: {}", bestEncoder);
     }
 
     @Override

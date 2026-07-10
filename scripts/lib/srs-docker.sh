@@ -193,7 +193,7 @@ srs_remove_legacy_spike_container() {
 }
 
 srs_lan_ip() {
-  ipconfig getifaddr en0 2>/dev/null || echo "10.255.61.28"
+  ipconfig getifaddr en0 2>/dev/null || echo "10.255.45.175"
 }
 
 srs_export_candidate_env() {

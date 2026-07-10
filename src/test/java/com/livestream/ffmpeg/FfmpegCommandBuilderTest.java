@@ -1,5 +1,6 @@
 package com.livestream.ffmpeg;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
@@ -56,7 +57,8 @@ class FfmpegCommandBuilderTest {
                 "rtmp://127.0.0.1/live/key_high",
                 "rtmp://127.0.0.1/live/key_mid",
                 "rtmp://127.0.0.1/live/key_low",
-                false);
+                false,
+                FfmpegCommandBuilder.EncoderType.LIBX264);
         assertTrue(cmd.contains("-vsync"));
         assertTrue(cmd.contains("cfr"));
         assertTrue(cmd.contains("-async"));
@@ -68,10 +70,25 @@ class FfmpegCommandBuilderTest {
     @Test
     void avfoundationMediamtxSinglePathUsesCfrSync() {
         List<String> cmd = FfmpegCommandBuilder.avfoundationCameraToMediamtx(
-                "/usr/bin/ffmpeg", "0:0", "rtmp://127.0.0.1/live/key");
+                "/usr/bin/ffmpeg",
+                "0:0",
+                "rtmp://127.0.0.1/live/key",
+                FfmpegCommandBuilder.EncoderType.LIBX264);
         int deviceIdx = cmd.indexOf("0:0");
         assertTrue(deviceIdx >= 0);
         assertTrue(cmd.subList(deviceIdx, cmd.size()).contains("-vsync"));
         assertTrue(cmd.subList(deviceIdx, cmd.size()).contains("cfr"));
+    }
+
+    @Test
+    void avfoundationCameraMediamtxUsesVideotoolboxWhenRequested() {
+        List<String> cmd = FfmpegCommandBuilder.avfoundationCameraToMediamtx(
+                "/usr/bin/ffmpeg",
+                "0:0",
+                "rtmp://127.0.0.1/live/key",
+                FfmpegCommandBuilder.EncoderType.VIDEOTOOLBOX);
+        assertTrue(cmd.contains("h264_videotoolbox"));
+        assertTrue(cmd.contains("-realtime"));
+        assertFalse(cmd.contains("x264-params"));
     }
 }

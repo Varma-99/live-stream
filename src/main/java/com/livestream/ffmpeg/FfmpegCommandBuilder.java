@@ -3,11 +3,19 @@ package com.livestream.ffmpeg;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Builds FFmpeg command lines for HLS output (segments + .m3u8 playlist).
  */
 public final class FfmpegCommandBuilder {
+
+    public enum EncoderType {
+        LIBX264,
+        VIDEOTOOLBOX,
+        NVENC
+    }
 
     /** Keyframe every 30 frames @ 30fps ≈ 1s (HLS). */
     private static final String GOP_FRAMES = "30";
@@ -32,6 +40,37 @@ public final class FfmpegCommandBuilder {
     private static final String HLS_LIST_SIZE = "6";
 
     private FfmpegCommandBuilder() {
+    }
+
+    /** Picks the best H.264 encoder available in the configured FFmpeg binary. */
+    public static EncoderType probeBestEncoder(String ffmpegPath) {
+        if (ffmpegPath == null || ffmpegPath.isBlank()) {
+            return EncoderType.LIBX264;
+        }
+        Process process = null;
+        try {
+            process = new ProcessBuilder(ffmpegPath, "-hide_banner", "-encoders")
+                    .redirectErrorStream(true)
+                    .start();
+            String out = new String(process.getInputStream().readAllBytes());
+            if (!process.waitFor(3, TimeUnit.SECONDS)) {
+                return EncoderType.LIBX264;
+            }
+            String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+            if (os.contains("mac") && out.contains("h264_videotoolbox")) {
+                return EncoderType.VIDEOTOOLBOX;
+            }
+            if (!os.contains("mac") && out.contains("h264_nvenc")) {
+                return EncoderType.NVENC;
+            }
+        } catch (Exception e) {
+            return EncoderType.LIBX264;
+        } finally {
+            if (process != null) {
+                process.destroyForcibly();
+            }
+        }
+        return EncoderType.LIBX264;
     }
 
     /** HLS at reduced bitrate for degrade demo. */
@@ -230,7 +269,8 @@ public final class FfmpegCommandBuilder {
         return command;
     }
 
-    public static List<String> avfoundationCameraToMediamtx(String ffmpegPath, String device, String rtmpPublishUrl) {
+    public static List<String> avfoundationCameraToMediamtx(
+            String ffmpegPath, String device, String rtmpPublishUrl, EncoderType encoder) {
         List<String> command = new ArrayList<>();
         command.add(ffmpegPath);
         command.add("-y");
@@ -244,7 +284,7 @@ public final class FfmpegCommandBuilder {
         command.add("-i");
         command.add(device);
         appendAvfoundationCaptureSync(command);
-        appendMediamtxWebrtcEncoding(command);
+        appendMediamtxVideoEncoding(command, "2500k", false, encoder);
         appendFlvPublish(command, rtmpPublishUrl);
         return command;
     }
@@ -258,7 +298,8 @@ public final class FfmpegCommandBuilder {
             String rtmpPublishUrlHigh,
             String rtmpPublishUrlMid,
             String rtmpPublishUrlLow,
-            boolean degraded) {
+            boolean degraded,
+            EncoderType encoder) {
         List<String> command = new ArrayList<>();
         command.add(ffmpegPath);
         command.add("-y");
@@ -275,13 +316,13 @@ public final class FfmpegCommandBuilder {
         command.add("-filter_complex");
         command.add(degraded ? ABR_FILTER_DEGRADED : ABR_FILTER_NORMAL);
         if (degraded) {
-            appendMediamtxAbrOutput(command, "[vhi]", "0:a:0", DEGRADED_VIDEO_BITRATE, rtmpPublishUrlHigh, true);
-            appendMediamtxAbrOutput(command, "[vmd]", "0:a:0", DEGRADED_VIDEO_BITRATE, rtmpPublishUrlMid, true);
-            appendMediamtxAbrOutput(command, "[vlo]", "0:a:0", DEGRADED_VIDEO_BITRATE, rtmpPublishUrlLow, true);
+            appendMediamtxAbrOutput(command, "[vhi]", "0:a:0", DEGRADED_VIDEO_BITRATE, rtmpPublishUrlHigh, true, encoder);
+            appendMediamtxAbrOutput(command, "[vmd]", "0:a:0", DEGRADED_VIDEO_BITRATE, rtmpPublishUrlMid, true, encoder);
+            appendMediamtxAbrOutput(command, "[vlo]", "0:a:0", DEGRADED_VIDEO_BITRATE, rtmpPublishUrlLow, true, encoder);
         } else {
-            appendMediamtxAbrOutput(command, "[vhi]", "0:a:0", "2500k", rtmpPublishUrlHigh, false);
-            appendMediamtxAbrOutput(command, "[vmd]", "0:a:0", "1200k", rtmpPublishUrlMid, false);
-            appendMediamtxAbrOutput(command, "[vlo]", "0:a:0", "600k", rtmpPublishUrlLow, false);
+            appendMediamtxAbrOutput(command, "[vhi]", "0:a:0", "2500k", rtmpPublishUrlHigh, false, encoder);
+            appendMediamtxAbrOutput(command, "[vmd]", "0:a:0", "1200k", rtmpPublishUrlMid, false, encoder);
+            appendMediamtxAbrOutput(command, "[vlo]", "0:a:0", "600k", rtmpPublishUrlLow, false, encoder);
         }
         return command;
     }
@@ -306,13 +347,13 @@ public final class FfmpegCommandBuilder {
         command.add("-filter_complex");
         command.add(degraded ? ABR_FILTER_DEGRADED : ABR_FILTER_NORMAL);
         if (degraded) {
-            appendMediamtxAbrOutput(command, "[vhi]", "1:a:0", DEGRADED_VIDEO_BITRATE, rtmpPublishUrlHigh, true);
-            appendMediamtxAbrOutput(command, "[vmd]", "1:a:0", DEGRADED_VIDEO_BITRATE, rtmpPublishUrlMid, true);
-            appendMediamtxAbrOutput(command, "[vlo]", "1:a:0", DEGRADED_VIDEO_BITRATE, rtmpPublishUrlLow, true);
+            appendMediamtxAbrOutput(command, "[vhi]", "1:a:0", DEGRADED_VIDEO_BITRATE, rtmpPublishUrlHigh, true, EncoderType.LIBX264);
+            appendMediamtxAbrOutput(command, "[vmd]", "1:a:0", DEGRADED_VIDEO_BITRATE, rtmpPublishUrlMid, true, EncoderType.LIBX264);
+            appendMediamtxAbrOutput(command, "[vlo]", "1:a:0", DEGRADED_VIDEO_BITRATE, rtmpPublishUrlLow, true, EncoderType.LIBX264);
         } else {
-            appendMediamtxAbrOutput(command, "[vhi]", "1:a:0", "2500k", rtmpPublishUrlHigh, false);
-            appendMediamtxAbrOutput(command, "[vmd]", "1:a:0", "1200k", rtmpPublishUrlMid, false);
-            appendMediamtxAbrOutput(command, "[vlo]", "1:a:0", "600k", rtmpPublishUrlLow, false);
+            appendMediamtxAbrOutput(command, "[vhi]", "1:a:0", "2500k", rtmpPublishUrlHigh, false, EncoderType.LIBX264);
+            appendMediamtxAbrOutput(command, "[vmd]", "1:a:0", "1200k", rtmpPublishUrlMid, false, EncoderType.LIBX264);
+            appendMediamtxAbrOutput(command, "[vlo]", "1:a:0", "600k", rtmpPublishUrlLow, false, EncoderType.LIBX264);
         }
         return command;
     }
@@ -323,22 +364,59 @@ public final class FfmpegCommandBuilder {
             String audioMap,
             String videoBitrate,
             String rtmpUrl,
-            boolean degraded) {
+            boolean degraded,
+            EncoderType encoder) {
         command.add("-map");
         command.add(videoLabel);
         command.add("-map");
         command.add(audioMap);
-        appendMediamtxVideoEncoding(command, videoBitrate, degraded);
+        appendMediamtxVideoEncoding(command, videoBitrate, degraded, encoder);
         appendFlvPublish(command, rtmpUrl);
     }
 
-    private static void appendMediamtxVideoEncoding(List<String> command, String videoBitrate, boolean degraded) {
-        command.add("-c:v");
-        command.add("libx264");
-        command.add("-preset");
-        command.add("ultrafast");
-        command.add("-tune");
-        command.add("zerolatency");
+    private static void appendMediamtxVideoEncoding(
+            List<String> command, String videoBitrate, boolean degraded, EncoderType encoder) {
+        EncoderType effective = encoder != null ? encoder : EncoderType.LIBX264;
+        switch (effective) {
+            case VIDEOTOOLBOX -> {
+                command.add("-c:v");
+                command.add("h264_videotoolbox");
+                command.add("-b:v");
+                command.add(videoBitrate);
+                command.add("-realtime");
+                command.add("1");
+            }
+            case NVENC -> {
+                command.add("-c:v");
+                command.add("h264_nvenc");
+                command.add("-preset");
+                command.add("llhq");
+                command.add("-b:v");
+                command.add(videoBitrate);
+                command.add("-maxrate");
+                command.add(videoBitrate);
+                command.add("-bufsize");
+                command.add(bufferSize(videoBitrate));
+                command.add("-rc");
+                command.add("vbr_hq");
+            }
+            default -> {
+                command.add("-c:v");
+                command.add("libx264");
+                command.add("-preset");
+                command.add("ultrafast");
+                command.add("-tune");
+                command.add("zerolatency");
+                command.add("-b:v");
+                command.add(videoBitrate);
+                command.add("-maxrate");
+                command.add(videoBitrate);
+                command.add("-bufsize");
+                command.add(bufferSize(videoBitrate));
+                command.add("-x264-params");
+                command.add("bframes=0:rc-lookahead=0:sync-lookahead=0:scenecut=0");
+            }
+        }
         command.add("-profile:v");
         command.add("baseline");
         command.add("-pix_fmt");
@@ -348,18 +426,8 @@ public final class FfmpegCommandBuilder {
         command.add(gop);
         command.add("-keyint_min");
         command.add(gop);
-        command.add("-sc_threshold");
-        command.add("0");
         command.add("-bf");
         command.add("0");
-        command.add("-b:v");
-        command.add(videoBitrate);
-        command.add("-maxrate");
-        command.add(videoBitrate);
-        command.add("-bufsize");
-        command.add(bufferSize(videoBitrate));
-        command.add("-x264-params");
-        command.add("bframes=0:rc-lookahead=0:sync-lookahead=0:scenecut=0");
         command.add("-c:a");
         command.add("aac");
         command.add("-profile:a");

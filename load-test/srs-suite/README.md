@@ -60,7 +60,7 @@ RTMP_PUBLISHER_COUNT=20
 RTMP_SUBSCRIBER_COUNT=100
 WHEP_SUBSCRIBERS=100
 DEGRADE_SUBS=15
-BASE_URL=http://10.255.61.28:8080
+BASE_URL=http://10.255.45.175:8080
 ```
 
 ## Reports per test
@@ -111,7 +111,7 @@ chmod +x load-test/srs-suite/run-all-cluster.sh load-test/srs-suite/*-cluster.sh
 Env (cluster):
 
 ```bash
-BASE_URL=http://10.255.61.28:8080
+BASE_URL=http://10.255.45.175:8080
 SRS_API_BASE=http://127.0.0.1:1995
 SRS_WHEP_BASE=http://127.0.0.1:1985
 FAILOVER_VUS_BEFORE=30

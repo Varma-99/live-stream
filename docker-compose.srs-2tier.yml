@@ -20,7 +20,7 @@ services:
     ports:
       - "8000:8000/udp"
     environment:
-      CANDIDATE: ${SRS_PLAYBACK_CANDIDATE:-10.255.61.28:8000}
+      CANDIDATE: ${SRS_PLAYBACK_CANDIDATE:-10.255.45.175:8000}
     volumes:
       - ./srs.playback.conf:/usr/local/srs/conf/srs.conf:ro
     depends_on:

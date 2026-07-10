@@ -19,7 +19,7 @@ webrtc: yes
 webrtcAddress: :8889
 
 # Method A: LAN host for phones on Wi-Fi + localhost for Mac streamer
-webrtcAdditionalHosts: [127.0.0.1, localhost, 10.255.61.28]
+webrtcAdditionalHosts: [127.0.0.1, localhost, 10.255.45.175]
 webrtcAllowOrigin: "*"
 webrtcSTUNGatherTimeout: 1s
 webrtcTrackGatherTimeout: 1s

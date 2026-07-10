@@ -44,7 +44,7 @@ cameraDevice: "0:0"
 useTestVideo: false
 rtmpPort: 1935
 
-publicWebBase: http://10.255.61.28:8080
+publicWebBase: http://10.255.45.175:8080
 
 streamDelivery: srs
 srsRtmpPublishBase: rtmp://127.0.0.1:1935

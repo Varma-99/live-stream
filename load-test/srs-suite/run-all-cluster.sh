@@ -6,7 +6,7 @@ ROOT="$(cd "${DIR}/../.." && pwd)"
 RUN_ID="$(date +%Y%m%d-%H%M%S)"
 
 export MEDIA_BACKEND=srs
-export BASE_URL="${BASE_URL:-http://10.255.61.28:8080}"
+export BASE_URL="${BASE_URL:-http://10.255.45.175:8080}"
 export CLUSTER_ORIGIN_API="${CLUSTER_ORIGIN_API:-http://127.0.0.1:1995}"
 export CLUSTER_WHEP_LB="${CLUSTER_WHEP_LB:-http://127.0.0.1:1985}"
 

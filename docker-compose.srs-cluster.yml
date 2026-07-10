@@ -10,7 +10,7 @@ services:
       - "1995:1985"
       - "8000:8000/udp"
     environment:
-      CANDIDATE: ${SRS_ORIGIN_CANDIDATE:-10.255.61.28:8000}
+      CANDIDATE: ${SRS_ORIGIN_CANDIDATE:-10.255.45.175:8000}
     volumes:
       - ./srs.origin.conf:/usr/local/srs/conf/srs.conf:ro
     command: ["./objs/srs", "-c", "conf/srs.conf"]
@@ -22,7 +22,7 @@ services:
     ports:
       - "8001:8000/udp"
     environment:
-      CANDIDATE: ${SRS_EDGE1_CANDIDATE:-10.255.61.28:8001}
+      CANDIDATE: ${SRS_EDGE1_CANDIDATE:-10.255.45.175:8001}
     volumes:
       - ./srs.edge.conf:/usr/local/srs/conf/srs.conf:ro
     depends_on:
@@ -36,7 +36,7 @@ services:
     ports:
       - "8002:8000/udp"
     environment:
-      CANDIDATE: ${SRS_EDGE2_CANDIDATE:-10.255.61.28:8002}
+      CANDIDATE: ${SRS_EDGE2_CANDIDATE:-10.255.45.175:8002}
     volumes:
       - ./srs.edge.conf:/usr/local/srs/conf/srs.conf:ro
     depends_on:
